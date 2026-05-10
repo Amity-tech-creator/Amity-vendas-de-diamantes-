@@ -1,0 +1,143 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "A game top-up order",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "playerId": { "type": "string" },
+        "gameId": { "type": "string" },
+        "packageId": { "type": "string" },
+        "pkgName": { "type": "string" },
+        "amount": { "type": "number" },
+        "price": { "type": "number" },
+        "method": { "type": "string", "enum": ["MPESA", "EMOLA"] },
+        "status": { "type": "string", "enum": ["pending", "confirmed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "playerId", "gameId", "packageId", "amount", "price", "method", "status", "createdAt"]
+    },
+    "GlobalStats": {
+      "title": "GlobalStats",
+      "description": "Global application statistics",
+      "type": "object",
+      "properties": {
+        "deliveriesToday": { "type": "number" },
+        "onlineUsers": { "type": "number" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Presence": {
+      "title": "Presence",
+      "description": "User presence record",
+      "type": "object",
+      "properties": {
+        "lastSeen": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Package": {
+      "title": "Package",
+      "description": "A top-up package for a game",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "amount": { "type": "number" },
+        "price": { "type": "number" },
+        "category": { "type": "string" },
+        "active": { "type": "boolean" }
+      }
+    },
+    "Game": {
+      "title": "Game",
+      "description": "A game available for top-up",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "image": { "type": "string" },
+        "color": { "type": "string" },
+        "accent": { "type": "string" },
+        "active": { "type": "boolean" }
+      }
+    },
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "Security configuration for admin access",
+      "type": "object",
+      "properties": {
+        "passwordHash": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      }
+    },
+    "AdminLog": {
+      "title": "AdminLog",
+      "description": "Log of admin access attempts",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "success": { "type": "boolean" },
+        "type": { "type": "string" }
+      }
+    },
+    "BotCommand": {
+      "title": "BotCommand",
+      "description": "A command trigger and response for the WhatsApp bot",
+      "type": "object",
+      "properties": {
+        "trigger": { "type": "string" },
+        "response": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["trigger", "response"]
+    }
+  },
+  "firestore": {
+    "games/{gameId}": {
+      "schema": "Game",
+      "description": "Available games"
+    },
+    "games/{gameId}/packages/{packageId}": {
+      "schema": "Package",
+      "description": "Packages for each game"
+    },
+    "orders/{orderId}": {
+      "schema": "Order",
+      "description": "Top-up orders"
+    },
+    "stats/globals": {
+      "schema": "GlobalStats",
+      "description": "Global stats counters"
+    },
+    "presence/{userId}": {
+      "schema": "Presence",
+      "description": "Tracks online users"
+    },
+    "config/admin": {
+      "schema": "AdminConfig",
+      "description": "Admin security credentials"
+    },
+    "config/bot": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "whatsappNumber": { "type": "string" },
+          "groupLink": { "type": "string" }
+        }
+      },
+      "description": "Bot configuration"
+    },
+    "admin_logs/{logId}": {
+      "schema": "AdminLog",
+      "description": "Audit trail for admin attempts"
+    },
+    "bot_commands/{cmdId}": {
+      "schema": "BotCommand",
+      "description": "Bot triggers and responses"
+    }
+  }
+}

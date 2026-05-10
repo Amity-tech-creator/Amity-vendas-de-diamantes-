@@ -1,0 +1,110 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 0.1 Test connection
+    match /test/connection {
+      allow read: if true;
+    }
+
+    // Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'do2738735@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // 1. Orders collection
+    match /orders/{orderId} {
+      allow create: if (
+        isSignedIn() &&
+        isValidId(orderId) &&
+        incoming().keys().hasAll(['userId', 'playerId', 'gameId', 'packageId', 'pkgName', 'amount', 'price', 'method', 'status', 'createdAt']) &&
+        incoming().keys().size() == 10 &&
+        incoming().userId == request.auth.uid &&
+        incoming().playerId is string && incoming().playerId.size() <= 100 &&
+        incoming().gameId is string &&
+        incoming().amount is number &&
+        incoming().price is number &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time
+      );
+      // Users can only read their own orders
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Admin can update status (e.g. to completed)
+      allow update: if isAdmin();
+    }
+
+    // 2. Presence collection
+    match /presence/{userId} {
+      allow write: if (
+        isSignedIn() && 
+        request.auth.uid == userId &&
+        incoming().keys().hasAll(['lastSeen']) &&
+        incoming().keys().size() == 1 &&
+        incoming().lastSeen == request.time
+      );
+      allow read: if isSignedIn();
+    }
+
+    // 3. Games and Packages
+    match /games/{gameId} {
+      allow read: if true;
+      allow write: if isAdmin();
+
+      match /packages/{packageId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+    }
+
+    // 4. Stats
+    match /stats/{docId} {
+      allow read: if true;
+      allow write: if isAdmin(); 
+    }
+
+    // 5. Admin Security Config
+    match /config/admin {
+      allow read: if isSignedIn();
+      // Only the super-admin can update the hash
+      allow write: if isAdmin();
+    }
+
+    // 6. Admin Audit Logs
+    match /admin_logs/{logId} {
+      allow create: if isSignedIn();
+      allow read: if isAdmin();
+    }
+
+    // 7. Bot Commands
+    match /bot_commands/{cmdId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 8. Configuration
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
