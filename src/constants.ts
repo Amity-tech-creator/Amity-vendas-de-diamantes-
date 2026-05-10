@@ -9,6 +9,7 @@ export const GAMES: Game[] = [
     icon: Gamepad2,
     color: 'bg-orange-600',
     accent: 'text-orange-500',
+    startingPrice: 60,
     packages: [
       { id: 'ff-110', name: '💠 110💎', amount: 110, price: 85 },
       { id: 'ff-231', name: '💠 231💎', amount: 231, price: 175 },
@@ -31,6 +32,7 @@ export const GAMES: Game[] = [
     icon: Smartphone,
     color: 'bg-green-700',
     accent: 'text-green-500',
+    startingPrice: 95,
     packages: [
       { id: 'cod-80', name: '80 CP', amount: 80, price: 95 },
       { id: 'cod-420', name: '420 CP (Battle Pass)', amount: 420, price: 480 },
@@ -46,6 +48,7 @@ export const GAMES: Game[] = [
     icon: Gamepad2,
     color: 'bg-yellow-600',
     accent: 'text-yellow-500',
+    startingPrice: 90,
     packages: [
       { id: 'pubg-60', name: '60 UC', amount: 60, price: 90 },
       { id: 'pubg-325', name: '325 UC', amount: 325, price: 460 },
@@ -60,6 +63,7 @@ export const GAMES: Game[] = [
     icon: Smartphone,
     color: 'bg-blue-600',
     accent: 'text-blue-500',
+    startingPrice: 120,
     packages: [
       { id: 'ml-86', name: '💠 86 Diamonds', amount: 86, price: 120 },
       { id: 'ml-172', name: '💠 172 Diamonds', amount: 172, price: 230 },
@@ -74,6 +78,7 @@ export const GAMES: Game[] = [
     icon: Gamepad2,
     color: 'bg-red-600',
     accent: 'text-red-500',
+    startingPrice: 350,
     packages: [
       { id: 'val-500', name: '🔴 500 VP', amount: 500, price: 350 },
       { id: 'val-1050', name: '🔴 1050 VP', amount: 1050, price: 700 },
@@ -90,5 +95,5 @@ export const PAYMENT_NUMBERS = {
 export const WHATSAPP_NUMBER = '258871087088';
 export const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_NUMBER}`;
 
-export const WHATSAPP_SUPPORT_NUMBER = '25856295597';
+export const WHATSAPP_SUPPORT_NUMBER = '258856295597';
 export const WHATSAPP_SUPPORT_LINK = `https://wa.me/${WHATSAPP_SUPPORT_NUMBER}`;

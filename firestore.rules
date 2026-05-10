@@ -26,7 +26,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'do2738735@gmail.com' ||
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'do2738735@gmail.com') ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -36,18 +36,20 @@ service cloud.firestore {
       allow create: if (
         isSignedIn() &&
         isValidId(orderId) &&
-        incoming().keys().hasAll(['userId', 'playerId', 'gameId', 'packageId', 'pkgName', 'amount', 'price', 'method', 'status', 'createdAt']) &&
-        incoming().keys().size() == 10 &&
+        incoming().keys().hasAll(['userId', 'playerId', 'gameId', 'gameName', 'packageId', 'packageName', 'price', 'status', 'createdAt']) &&
+        incoming().keys().size() == 9 &&
         incoming().userId == request.auth.uid &&
         incoming().playerId is string && incoming().playerId.size() <= 100 &&
         incoming().gameId is string &&
-        incoming().amount is number &&
+        incoming().gameName is string &&
+        incoming().packageId is string &&
+        incoming().packageName is string &&
         incoming().price is number &&
-        incoming().status == 'pending' &&
+        (incoming().status == 'pending' || incoming().status == 'delivered') &&
         incoming().createdAt == request.time
       );
-      // Users can only read their own orders
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Users can see the live feed entries and their own full orders
+      allow list: if true;
       allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       // Admin can update status (e.g. to completed)
       allow update: if isAdmin();
@@ -105,6 +107,12 @@ service cloud.firestore {
     match /config/{configId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // 9. User Profiles
+    match /user_profiles/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if isSignedIn() && request.auth.uid == userId;
     }
   }
 }

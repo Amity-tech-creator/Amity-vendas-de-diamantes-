@@ -15,7 +15,8 @@ import {
   Copy,
   ExternalLink,
   Plus,
-  Trash2
+  Trash2,
+  Pencil
 } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { GAMES } from '../constants';
@@ -23,6 +24,7 @@ import {
   collection, 
   setDoc, 
   doc, 
+  getDoc,
   query, 
   orderBy, 
   limit, 
@@ -369,22 +371,25 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
   const [stats, setStats] = useState<Stats>({ totalRevenue: 0, pendingCount: 0, majorPrice: 0 });
   const [botCommands, setBotCommands] = useState<any[]>([]);
   const [isAddingCommand, setIsAddingCommand] = useState(false);
+  const [editingCommand, setEditingCommand] = useState<any | null>(null);
   const [newCommand, setNewCommand] = useState({ trigger: '', response: '', description: '' });
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [groupLink, setGroupLink] = useState('');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(false);
 
   const fetchBotConfig = useCallback(async () => {
-    const path = 'config';
     try {
-      const docSnap = await getDocs(query(collection(db, path), limit(1)));
-      const botDoc = docSnap.docs.find(d => d.id === 'bot');
-      if (botDoc) {
-        setWhatsappNumber(botDoc.data().whatsappNumber || '');
-        setGroupLink(botDoc.data().groupLink || '');
+      const docRef = doc(db, 'config', 'bot');
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        setWhatsappNumber(data.whatsappNumber || '');
+        setGroupLink(data.groupLink || '');
+        setAutoApprove(data.autoApprove || false);
       }
     } catch (e) {
-      handleFirestoreError(e, OperationType.LIST, path);
+      handleFirestoreError(e, OperationType.GET, 'config/bot');
     }
   }, []);
 
@@ -392,7 +397,7 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
     const path = 'config/bot';
     try {
       setIsSavingConfig(true);
-      await setDoc(doc(db, 'config', 'bot'), { whatsappNumber, groupLink });
+      await setDoc(doc(db, 'config', 'bot'), { whatsappNumber, groupLink, autoApprove }, { merge: true });
       alert('Configurações salvas com sucesso!');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, path);
@@ -506,6 +511,7 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
   };
 
   const handleDeleteCommand = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este comando?')) return;
     const path = `bot_commands/${id}`;
     try {
       await deleteDoc(doc(db, 'bot_commands', id));
@@ -586,6 +592,7 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
           description: g.description,
           color: g.color || 'bg-zinc-900',
           accent: g.accent || 'text-cyan-500',
+          startingPrice: g.startingPrice || (g.packages && g.packages.length > 0 ? Math.min(...g.packages.map(p => p.price)) : 0),
           active: true
         });
         
@@ -613,7 +620,9 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
   };
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(text).catch(err => {
+      console.warn('Clipboard copy failed:', err);
+    });
     alert('Copiado para o clipboard!');
   };
 
@@ -636,6 +645,8 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
             <span>Terminal: #RX-0912</span>
             <span className="w-1.5 h-1.5 bg-cyber-emerald rounded-full" />
             <span>Sincronizado via Cloud</span>
+            <span className="opacity-30">|</span>
+            <span className="text-[10px] text-cyber-cyan opacity-60 lowercase font-mono">{auth.currentUser?.email}</span>
           </div>
         </div>
         
@@ -753,39 +764,55 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
                 </div>
               </div>
               
-              <div className="space-y-4 max-w-xl">
-                 <div className="space-y-2">
-                    <label className="text-[10px] text-zinc-600 font-black uppercase tracking-widest">Número do WhatsApp (Internacional)</label>
-                    <input 
-                      type="text"
-                      value={whatsappNumber}
-                      onChange={e => setWhatsappNumber(e.target.value)}
-                      placeholder="Ex: 258840000000"
-                      className="w-full bg-black border border-zinc-800 p-4 text-white font-mono text-sm focus:border-cyber-cyan outline-none"
-                    />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
+                 <div className="space-y-4">
+                    <div className="space-y-2">
+                       <label className="text-[10px] text-zinc-600 font-black uppercase tracking-widest">Número do WhatsApp (Internacional)</label>
+                       <input 
+                         type="text"
+                         value={whatsappNumber}
+                         onChange={e => setWhatsappNumber(e.target.value)}
+                         placeholder="Ex: 258840000000"
+                         className="w-full bg-black border border-zinc-800 p-4 text-white font-mono text-sm focus:border-cyber-cyan outline-none"
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] text-zinc-600 font-black uppercase tracking-widest">Link do Grupo Oficial</label>
+                       <input 
+                         type="text"
+                         value={groupLink}
+                         onChange={e => setGroupLink(e.target.value)}
+                         placeholder="Ex: https://chat.whatsapp.com/..."
+                         className="w-full bg-black border border-zinc-800 p-4 text-white font-mono text-sm focus:border-cyber-cyan outline-none"
+                       />
+                    </div>
                  </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] text-zinc-600 font-black uppercase tracking-widest">Link do Grupo Oficial</label>
-                    <input 
-                      type="text"
-                      value={groupLink}
-                      onChange={e => setGroupLink(e.target.value)}
-                      placeholder="Ex: https://chat.whatsapp.com/..."
-                      className="w-full bg-black border border-zinc-800 p-4 text-white font-mono text-sm focus:border-cyber-cyan outline-none"
-                    />
+
+                 <div className="space-y-4">
+                   <div className="flex items-center justify-between p-6 bg-zinc-900/50 border border-zinc-800 h-full">
+                      <div className="space-y-1">
+                        <p className="text-xs text-white font-black uppercase tracking-widest">Auto-Aprovação de Pedidos</p>
+                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest leading-relaxed">Sinal de entrega enviado instantaneamente<br/>após o pagamento via M-Pesa/e-mola.</p>
+                      </div>
+                      <button 
+                        onClick={() => setAutoApprove(!autoApprove)}
+                        className={`w-14 h-8 flex items-center p-1 transition-colors duration-300 ${autoApprove ? 'bg-cyber-emerald shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'bg-zinc-800'}`}
+                      >
+                        <div className={`w-6 h-6 bg-white transition-transform duration-300 ${autoApprove ? 'translate-x-6' : 'translate-x-0'}`} />
+                      </button>
+                   </div>
                  </div>
-                 <button 
-                  onClick={saveBotConfig}
-                  disabled={isSavingConfig}
-                  className="w-full py-4 bg-zinc-800 text-white text-[10px] font-black uppercase tracking-[0.2em] hover:bg-white hover:text-black transition-all disabled:opacity-50"
-                 >
-                   {isSavingConfig ? 'SALVANDO...' : 'VINCULAR NÚMERO E GRUPO'}
-                 </button>
               </div>
 
-              <p className="text-zinc-400 max-w-2xl leading-relaxed text-sm">
-                Configure os comandos que o seu robô (AutoResponder) irá identificar. Gere links diretos para que seus clientes ativem as funções automaticamente ao entrar em contato.
-              </p>
+               <div className="max-w-4xl pt-4">
+                  <button 
+                  onClick={saveBotConfig}
+                  disabled={isSavingConfig}
+                  className="w-full py-5 bg-zinc-800 text-white text-[11px] font-black uppercase tracking-[0.3em] hover:bg-white hover:text-black transition-all disabled:opacity-50 shadow-xl"
+                  >
+                    {isSavingConfig ? 'SINCRONIZANDO...' : 'SALVAR CONFIGURAÇÕES DO NÚCLEO'}
+                  </button>
+               </div>
             </div>
           </div>
 
@@ -795,53 +822,77 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
               <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
                 <div className="flex items-center gap-3">
                   <MessageSquare className="text-cyber-emerald" size={18} />
-                  <h4 className="text-sm font-black uppercase tracking-[0.2em] text-white">Comandos Ativos</h4>
+                  <h4 className="text-sm font-black uppercase tracking-[0.2em] text-white">Comandos e Gatilhos</h4>
                 </div>
                 <button 
-                  onClick={() => setIsAddingCommand(true)}
-                  className="px-4 py-2 bg-cyber-emerald text-black text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all flex items-center gap-2"
+                  onClick={() => {
+                    setEditingCommand(null);
+                    setNewCommand({ trigger: '', response: '', description: '' });
+                    setIsAddingCommand(true);
+                  }}
+                  className="px-6 py-3 bg-cyber-emerald text-black text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all flex items-center gap-2 shadow-lg"
                 >
-                  <Plus size={14} /> ADICIONAR
+                  <Plus size={16} /> NOVO COMANDO
                 </button>
               </div>
 
               <div className="grid grid-cols-1 gap-4">
                 {botCommands.length === 0 ? (
-                  <div className="p-12 text-center border border-zinc-900 bg-zinc-950/20">
-                    <p className="text-[10px] text-zinc-600 font-black uppercase tracking-widest italic">Nenhum gatilho customizado...</p>
+                  <div className="p-20 text-center border border-zinc-900 bg-zinc-950/20 space-y-4">
+                    <MessageSquare className="w-12 h-12 text-zinc-900 mx-auto" />
+                    <p className="text-[10px] text-zinc-600 font-black uppercase tracking-widest italic">Nenhum gatilho de resposta configurado</p>
                   </div>
                 ) : (
                   botCommands.map((cmd) => (
-                    <div key={cmd.id} className="p-6 bg-black border border-zinc-900 group hover:border-cyber-cyan transition-all">
-                      <div className="flex justify-between items-start mb-4">
+                    <div key={cmd.id} className="p-8 bg-black border border-zinc-900 group hover:border-cyber-cyan transition-all relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-cyber-cyan opacity-20" />
+                      <div className="flex justify-between items-start mb-6">
                         <div className="space-y-1">
-                          <code className="text-lg font-mono font-black text-cyber-cyan">{cmd.trigger}</code>
-                          <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest">{cmd.description}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-black text-cyber-cyan bg-cyber-cyan/10 px-2 py-0.5 border border-cyber-cyan/20">TRIGGER</span>
+                            <code className="text-xl font-mono font-black text-white">{cmd.trigger}</code>
+                          </div>
+                          <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest italic pl-1">{cmd.description || 'Sem descrição'}</p>
                         </div>
                         <div className="flex gap-2">
                           <button 
                             onClick={() => {
                               if (!whatsappNumber) {
-                                alert('Por favor, vincule um número de WhatsApp primeiro.');
+                                alert('Erro: Vincule um número de WhatsApp primeiro nas configurações acima.');
                                 return;
                               }
-                              copyToClipboard(`https://wa.me/${whatsappNumber.replace(/\+/g, '')}?text=${encodeURIComponent(cmd.trigger)}`);
+                              const cleanNumber = whatsappNumber.replace(/[^\d]/g, '');
+                              copyToClipboard(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(cmd.trigger)}`);
                             }}
-                            className="p-2 bg-zinc-900 text-zinc-500 hover:text-cyber-cyan transition-colors"
-                            title="Copiar Link"
+                            className="p-3 bg-zinc-900 text-zinc-500 hover:text-cyber-cyan transition-colors"
+                            title="Copiar Link de Ativação"
                           >
-                            <Link size={14} />
+                            <Link size={16} />
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setEditingCommand(cmd);
+                              setNewCommand({ trigger: cmd.trigger, response: cmd.response, description: cmd.description || '' });
+                            }}
+                            className="p-3 bg-zinc-900 text-zinc-500 hover:text-cyber-emerald transition-colors"
+                            title="Editar Dados"
+                          >
+                            <Pencil size={16} />
                           </button>
                           <button 
                             onClick={() => handleDeleteCommand(cmd.id)}
-                            className="p-2 bg-zinc-900 text-zinc-500 hover:text-cyber-red transition-colors"
+                            className="p-3 bg-zinc-900 text-zinc-500 hover:text-cyber-red transition-colors"
+                            title="Remover Registro"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </div>
-                      <div className="p-4 bg-zinc-900/50 border-l-2 border-zinc-800 text-[11px] text-zinc-400 font-medium font-mono leading-relaxed truncate">
-                        {cmd.response}
+                      <div className="p-6 bg-zinc-900/30 border border-zinc-800/50 text-xs text-zinc-400 font-mono leading-relaxed relative">
+                        <div className="absolute top-2 right-2 opacity-10">
+                          <MessageSquare size={14} />
+                        </div>
+                        <p className="whitespace-pre-wrap">{cmd.response}</p>
                       </div>
                     </div>
                   ))
@@ -946,14 +997,16 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
             </motion.div>
           </div>
         )}
-        {isAddingCommand && (
+        {isAddingCommand || editingCommand ? (
           <div className="fixed inset-0 z-[1100] flex items-center justify-center p-6 bg-black/95 backdrop-blur-md">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               className="w-full max-w-md bg-zinc-950 border border-zinc-900 p-8 space-y-8"
             >
-              <h3 className="text-2xl font-heading text-white italic">NOVO <span className="text-cyber-emerald">GATILHO</span></h3>
+              <h3 className="text-2xl font-heading text-white italic">
+                {editingCommand ? 'EDITAR' : 'NOVO'} <span className="text-cyber-emerald">GATILHO</span>
+              </h3>
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-[10px] text-zinc-600 font-black uppercase tracking-widest">Gatilho (Trigger)</label>
@@ -988,13 +1041,39 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
               </div>
               <div className="flex gap-4 pt-4">
                 <button 
-                  onClick={handleAddCommand}
+                  onClick={async () => {
+                    if (!newCommand.trigger || !newCommand.response) return;
+                    
+                    if (editingCommand) {
+                      // Se o gatilho mudou, precisamos excluir o antigo e criar o novo porque o ID é o trigger
+                      const oldId = editingCommand.id;
+                      const newId = newCommand.trigger.replace(/\./g, '').toLowerCase();
+                      
+                      try {
+                        if (oldId !== newId) {
+                          await deleteDoc(doc(db, 'bot_commands', oldId));
+                        }
+                        await setDoc(doc(db, 'bot_commands', newId || 'cmd'), newCommand);
+                        await fetchBotCommands();
+                        setEditingCommand(null);
+                        setNewCommand({ trigger: '', response: '', description: '' });
+                      } catch (e) {
+                        handleFirestoreError(e, OperationType.WRITE, `bot_commands/${newId}`);
+                      }
+                    } else {
+                      handleAddCommand();
+                    }
+                  }}
                   className="flex-1 py-4 bg-cyber-emerald text-black font-black uppercase text-[10px] tracking-widest"
                 >
-                  SALVAR GATILHO
+                  {editingCommand ? 'ATUALIZAR' : 'SALVAR'} GATILHO
                 </button>
                 <button 
-                  onClick={() => setIsAddingCommand(false)}
+                  onClick={() => {
+                    setIsAddingCommand(false);
+                    setEditingCommand(null);
+                    setNewCommand({ trigger: '', response: '', description: '' });
+                  }}
                   className="flex-1 py-4 bg-zinc-900 text-zinc-500 font-black uppercase text-[10px] tracking-widest"
                 >
                   CANCELAR
@@ -1002,7 +1081,7 @@ export const AdminPanel = ({ onBack, onLogin }: { onBack: () => void, onLogin: (
               </div>
             </motion.div>
           </div>
-        )}
+        ) : null}
       </AnimatePresence>
     </motion.div>
   );

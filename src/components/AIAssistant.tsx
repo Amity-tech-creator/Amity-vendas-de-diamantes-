@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, X, Send, Sparkles, Loader2, Bot, Terminal, Volume2, VolumeX, Mic } from 'lucide-react';
+import { db } from '../firebase';
+import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { handleFirestoreError, OperationType } from '../utils';
 import { GAMES } from '../constants';
 
 
@@ -48,10 +51,40 @@ export const AIAssistant = ({
     };
 
     const handleRejection = (event: PromiseRejectionEvent) => {
-      console.error('Captured Promise Rejection:', event.reason);
-      const errorMsg = `[ASYNC_CONFLIT]: Erro de resposta do servidor. Código: ${event.reason?.message || 'Unknown'}.`;
+      const reason = event.reason;
+      const message = reason instanceof Error ? reason.message : String(reason);
+      
+      // Ignore common harmless rejections or empty reasons
+      if (
+        !reason ||
+        message.includes('user gesture') || 
+        message.includes('already starting') || 
+        message.includes('The user aborted a request') ||
+        message.includes('Interrupted by a call to pause') ||
+        message.includes('play() request was interrupted') ||
+        message.includes('AbortError') ||
+        message === 'undefined' || 
+        message === 'null' || 
+        message === '[object Object]' ||
+        message === ''
+      ) {
+        return;
+      }
+
+      // For logging real rejections in console AFTER filtering
+      console.error('Captured Promise Rejection:', reason);
+
+      // If it's a Firestore error (JSON string), parse it for better display
+      let displayMessage = message;
+      if (message.startsWith('{') && message.includes('operationType')) {
+        try {
+          const parsed = JSON.parse(message);
+          displayMessage = `Falha de Permissão Firestore (${parsed.operationType} em ${parsed.path})`;
+        } catch (e) {}
+      }
+
+      const errorMsg = `[ASYNC_CONFLIT]: Erro detectado. Código: ${displayMessage}.`;
       setMessages(prev => [...prev, { role: 'model', text: errorMsg }]);
-      speakText('Conflito assíncrono detectado.');
     };
 
     window.addEventListener('error', handleError);
@@ -75,6 +108,12 @@ export const AIAssistant = ({
 
         recognitionRef.current.onresult = (event: any) => {
           try {
+            // Prevent processing if the bot is currently speaking or streaming to avoid loop feedback
+            if (window.speechSynthesis.speaking) {
+              console.log("Bot is speaking, ignore transcript");
+              return;
+            }
+
             const transcript = event.results[0][0].transcript;
             if (transcript) {
               setInput(transcript);
@@ -260,20 +299,27 @@ export const AIAssistant = ({
   const speakText = (text: string) => {
     if (!isSpeechEnabled || !window.speechSynthesis) return;
     
+    // Cancel previous speech if it's the same or a quick succession to avoid overlap/repetition
+    // window.speechSynthesis.cancel(); // Don't cancel here if we want to queue sentences, but for low latency it might be better to cancel
+    
     const brVoice = voices.find(v => 
       v.lang.includes('pt-BR') && 
-      (v.name.includes('Google') || v.name.includes('Premium') || v.name.includes('Maria') || v.name.includes('Francisca'))
+      (v.name.includes('Google') || v.name.includes('Premium') || v.name.includes('Maria') || v.name.includes('Francisca') || v.name.includes('Daniela') || v.name.includes('Luciana') || v.name.includes('Heloisa'))
     ) || voices.find(v => v.lang.includes('pt-BR')) || voices[0];
     
     const utterance = new SpeechSynthesisUtterance(text);
     if (brVoice) utterance.voice = brVoice;
     
     utterance.lang = 'pt-BR';
-    utterance.rate = 1.1; // Slightly faster for responsiveness
+    utterance.rate = 1.15; // Slightly faster for responsiveness
     utterance.pitch = 1.0; 
     utterance.volume = 1;
 
-    // Small delay to ensure synthesis engine is ready if multiple calls happen rapidly
+    // Error handling for speech synthesis to avoid unhandled rejections
+    utterance.onerror = (e) => {
+      console.warn('SpeechSynthesisUtterance error:', e);
+    };
+
     window.speechSynthesis.speak(utterance);
   };
 
@@ -299,6 +345,24 @@ export const AIAssistant = ({
       const newUserMessage: Message = { role: 'user', text: userMessage };
       const history = [...messages, newUserMessage];
       setMessages(history);
+
+      // 1. Check for Manual Bot Command Triggers (Automation)
+      try {
+        const botCommandsSnap = await getDocs(query(collection(db, 'bot_commands'), orderBy('trigger')));
+        const matchedCommand = botCommandsSnap.docs.find(doc => 
+          lowerMsg.includes(doc.data().trigger.toLowerCase())
+        );
+
+        if (matchedCommand) {
+          const responseText = matchedCommand.data().response;
+          setLoading(false);
+          setMessages(prev => [...prev, { role: 'model', text: responseText }]);
+          speakText(responseText);
+          return;
+        }
+      } catch (e) {
+        handleFirestoreError(e, OperationType.LIST, 'bot_commands');
+      }
 
       // Admin Command Logic
       if (lowerMsg.startsWith('.')) {
@@ -453,22 +517,30 @@ export const AIAssistant = ({
             const sentenceEndings = /[.!?\n]/g;
             const currentSubText = fullText.slice(lastSpokenIndex);
             
-            // Tenta encontrar final de sentença ou fala se o bloco estiver muito grande (> 60 caracteres)
-            const match = sentenceEndings.exec(currentSubText);
-            
-            if (match) {
+            let match;
+            // Usamos lastIndex para processar múltiplas sentenças no mesmo chunk se necessário
+            while ((match = sentenceEndings.exec(currentSubText)) !== null) {
               const sentenceToEnd = currentSubText.slice(0, match.index + 1).trim();
+              
+              // Evita falar apenas pontuações ou frases curtíssimas repetidas
               if (sentenceToEnd.length > 2) {
                 speakText(sentenceToEnd);
-                lastSpokenIndex += match.index + 1;
               }
-            } else if (currentSubText.length > 60) {
-              // Se não achou pontuação mas tem texto longo, fala até o último espaço
-              const lastSpace = currentSubText.lastIndexOf(' ');
-              if (lastSpace > 30) {
-                const fragment = currentSubText.slice(0, lastSpace).trim();
-                speakText(fragment);
-                lastSpokenIndex += lastSpace + 1;
+              // Sempre avançamos o índice para não processar a mesma pontuação novamente
+              lastSpokenIndex += match.index + 1;
+              break; 
+            }
+
+            // Se o texto estiver ficando muito longo e sem pontuação, tenta falar um fragmento
+            if (fullText.length - lastSpokenIndex > 80) {
+              const segment = fullText.slice(lastSpokenIndex);
+              const lastSpace = segment.lastIndexOf(' ');
+              if (lastSpace > 40) {
+                const fragment = segment.slice(0, lastSpace).trim();
+                if (fragment.length > 5) {
+                  speakText(fragment);
+                  lastSpokenIndex += lastSpace + 1;
+                }
               }
             }
           }
@@ -516,6 +588,8 @@ export const AIAssistant = ({
       setLoading(false);
     }
   };
+
+  if (!isAdmin) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-[100]">

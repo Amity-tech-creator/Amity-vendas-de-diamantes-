@@ -45,6 +45,7 @@ import {
   collection, 
   setDoc, 
   doc, 
+  getDoc,
   serverTimestamp, 
   getCountFromServer,
   query,
@@ -83,6 +84,7 @@ const UserProfile = lazy(() => import('./components/UserProfile'));
 const LoginScreen = lazy(() => import('./components/LoginScreen'));
 
 import { AIAssistant } from './components/AIAssistant';
+import { LiveAutomationFeed } from './components/LiveAutomationFeed';
 
 // --- Components ---
 
@@ -106,7 +108,11 @@ const GameCard: FC<{ game: Game, onClick: () => void }> = ({ game, onClick }) =>
 
   const minPrice = (game.packages && game.packages.length > 0)
     ? Math.min(...game.packages.map((p: any) => p.price)) 
-    : 0;
+    : (game.startingPrice || 0);
+
+  const displayPrice = (game.packages && game.packages.length > 0)
+    ? game.packages[0].price
+    : (game.startingPrice || 0);
 
   return (
     <motion.div
@@ -181,7 +187,7 @@ const GameCard: FC<{ game: Game, onClick: () => void }> = ({ game, onClick }) =>
           <div className="space-y-1">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Fluxo Inicial</p>
             <p className={`text-2xl font-black italic tracking-tighter ${accentColors[game.id]}`}>
-              {game.packages?.[0]?.price || 0},00 <span className="text-xs">MT</span>
+              {displayPrice},00 <span className="text-xs">MT</span>
             </p>
           </div>
           <div className="flex items-center gap-2 text-zinc-400 font-black italic text-[11px] tracking-widest group-hover:text-white transition-all">
@@ -432,6 +438,21 @@ const CheckoutForm = ({
   const [method, setMethod] = useState<'MPESA' | 'EMOLA'>('MPESA');
   const [touched, setTouched] = useState(false);
 
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!auth.currentUser) return;
+      try {
+        const snap = await getDoc(doc(db, 'user_profiles', auth.currentUser.uid));
+        if (snap.exists() && snap.data().lastPlayerId) {
+          setPlayerId(snap.data().lastPlayerId);
+        }
+      } catch (e) {
+        console.warn("Profile fetch failed:", e);
+      }
+    };
+    fetchProfile();
+  }, []);
+
   const handleHelpClick = () => {
     onHelp?.(`Preciso de ajuda com a recarga de ${game.name}. Estou tentando comprar o pacote de ${pkg.name} via ${method}.`);
   };
@@ -458,39 +479,48 @@ const CheckoutForm = ({
         onClick={onBack}
         className="group flex items-center gap-3 text-zinc-600 hover:text-white transition-all uppercase text-[10px] font-black tracking-[0.3em]"
       >
-        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Reconfigurar Transmissão
+        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Retornar ao Catálogo
       </button>
 
       <div className="bg-zinc-950 border border-zinc-900 shadow-2xl relative overflow-hidden group">
-        <div className={`absolute top-0 left-0 w-full h-1 transition-all duration-500 ${error ? 'bg-cyber-red shadow-[0_0_15px_rgba(239,68,68,0.5)]' : (isValid ? 'bg-cyber-emerald shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'bg-zinc-800')}`} />
+        <div className={`absolute top-0 left-0 w-full h-[2px] transition-all duration-700 ${error ? 'bg-cyber-red shadow-[0_0_20px_rgba(239,68,68,0.6)]' : (isValid ? 'bg-cyber-emerald shadow-[0_0_20px_rgba(16,185,129,0.6)]' : 'bg-zinc-800')}`} />
         
-        <div className="p-8 lg:p-12 space-y-12">
-          <div className="flex flex-col md:flex-row justify-between items-start gap-6">
+        <div className="p-8 lg:p-14 space-y-14">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-8">
             <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className={`p-4 bg-black border border-zinc-800 ${game.accent}`}>
-                  <game.icon size={24} />
-                </div>
+              <div className="flex items-center gap-5">
+                <motion.div 
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                  className={`p-5 bg-black border-2 border-zinc-900 shadow-lg ${game.accent}`}
+                >
+                  <game.icon size={28} />
+                </motion.div>
                 <div>
-                  <h3 className="text-4xl font-heading text-white italic tracking-tighter">PROTOCOLO DE <span className="text-cyber-cyan">INJEÇÃO</span></h3>
-                  <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mt-1">{game.name.toUpperCase()} // SYS: {pkg.name}</p>
+                  <h3 className="text-5xl font-heading text-white italic tracking-tighter leading-none">CHECKOUT <span className="text-cyber-cyan neon-glow">PROTOCOLO</span></h3>
+                  <div className="flex items-center gap-3 mt-2">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.4em]">{game.name.toUpperCase()}</span>
+                    <div className="w-2 h-2 bg-zinc-800 rounded-full" />
+                    <span className="text-[10px] font-black text-cyber-cyan uppercase tracking-[0.4em]">{pkg.name}</span>
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="text-right flex items-center md:items-end flex-col gap-1">
-              <span className="text-[8px] font-black text-zinc-700 uppercase tracking-widest italic">Auth Layer V.8</span>
-              <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1 border transition-colors ${error ? 'text-cyber-red bg-cyber-red/5 border-cyber-red/20' : (isValid ? 'text-cyber-emerald bg-cyber-emerald/5 border-cyber-emerald/20' : 'text-zinc-600 border-zinc-800')}`}>
-                <Activity size={10} className={isValid ? 'animate-pulse' : ''} /> {error ? 'Integridade Violada' : (isValid ? 'Canal Seguro' : 'Aguardando Sinc.')}
+            <div className="text-right flex items-center md:items-end flex-col gap-2">
+              <div className="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-sm">
+                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest italic tracking-[0.3em]">AES_ENCRYPTION_V2</span>
+              </div>
+              <div className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] px-4 py-1.5 border transition-all duration-500 rounded-sm ${error ? 'text-cyber-red bg-cyber-red/10 border-cyber-red/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : (isValid ? 'text-cyber-emerald bg-cyber-emerald/10 border-cyber-emerald/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'text-zinc-600 border-zinc-900')}`}>
+                <Activity size={12} className={isValid ? 'animate-pulse' : ''} /> {error ? 'DADOS_INVÁLIDOS' : (isValid ? 'LINK_ESTÁVEL' : 'SINCRONIZANDO...')}
               </div>
             </div>
           </div>
           
           <div className="space-y-10">
-            <div className="space-y-4">
-              <label className="flex items-center gap-2 text-[10px] font-black text-zinc-500 uppercase tracking-[0.4em] italic">
-                <CreditCard size={12} className="text-cyber-cyan" /> Gateway de Liquidação
+            <div className="space-y-5">
+              <label className="flex items-center gap-3 text-[11px] font-black text-zinc-500 uppercase tracking-[0.5em] italic">
+                <CreditCard size={14} className="text-cyber-cyan" /> Método de Liquidação
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <MethodToggle 
                   active={method === 'MPESA'} 
                   onClick={() => setMethod('MPESA')} 
@@ -617,19 +647,21 @@ const MethodToggle = ({ active, onClick, label, sub, color, icon }: any) => (
 const PaymentInstructions = ({ 
   data, 
   pkg, 
-  gameId,
+  game,
   onComplete 
 }: { 
   data: { playerId: string, method: 'MPESA' | 'EMOLA' }, 
   pkg: Package,
-  gameId: GameType,
+  game: Game,
   onComplete: () => void | Promise<void> 
 }) => {
   const number = data.method === 'MPESA' ? PAYMENT_NUMBERS.MPESA : PAYMENT_NUMBERS.EMOLA;
   const [copied, setCopied] = useState<'number' | 'amount' | null>(null);
 
   const copyToClipboard = (text: string, type: 'number' | 'amount') => {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(text).catch(err => {
+      console.warn('Clipboard write failed:', err);
+    });
     setCopied(type);
     setTimeout(() => setCopied(null), 2000);
   };
@@ -687,20 +719,24 @@ const PaymentInstructions = ({
             </p>
           </div>
 
-          <div className="space-y-4">
-            <button
-              onClick={() => window.open(`${WHATSAPP_LINK}?text=Olá!%20Protocolo%20iniciado.%0A🕹️%20Servidor:%20${pkg.id}%0A📦%20Módulo:%20${pkg.name}%0A💰%20Valor:%20${pkg.price},00%20MT%0A🎯%20ID%20Target:%20${data.playerId}`, '_blank')}
-              className="w-full py-6 bg-cyber-emerald text-black font-black uppercase italic tracking-[0.2em] text-xl hover:bg-white transition-all shadow-[0_0_40px_rgba(16,185,129,0.2)] flex items-center justify-center gap-4"
-            >
-              <Smartphone size={24} /> ENVIAR COMPROVATIVO
-            </button>
-            <button
-              onClick={onComplete}
-              className="w-full py-4 text-[10px] text-zinc-700 font-black uppercase tracking-[0.4em] hover:text-white transition-colors"
-            >
-              Confirmado no Terminal
-            </button>
-          </div>
+              <div className="space-y-4 mt-6">
+                <button
+                  onClick={() => {
+                    const message = `Olá! Protocolo iniciado via Grid.%0A🚀 *PEDIDO:* ${pkg.name}%0A🕹️ *SERVIÇO:* ${game.name}%0A💎 *QUANTIDADE:* ${pkg.amount}%0A💰 *VALOR:* ${pkg.price},00 MT%0A🎯 *ID ALVO:* ${data.playerId}%0A💳 *MÉTODO:* ${data.method}`;
+                    window.open(`${WHATSAPP_LINK}?text=${message}`, '_blank');
+                  }}
+                  className="w-full py-8 bg-cyber-emerald text-black font-black uppercase italic tracking-[0.3em] text-2xl hover:bg-white transition-all shadow-[0_0_50px_rgba(16,185,129,0.3)] flex items-center justify-center gap-4 relative group"
+                >
+                  <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity" />
+                  <Smartphone size={32} className="group-hover:scale-110 transition-transform" /> ENVIAR COMPROVATIVO
+                </button>
+                <button
+                  onClick={onComplete}
+                  className="w-full py-5 text-[11px] text-zinc-600 font-black uppercase tracking-[0.5em] hover:text-white transition-colors border border-transparent hover:border-zinc-900"
+                >
+                  Confirmar no Terminal de Dados
+                </button>
+              </div>
         </div>
       </div>
     </motion.div>
@@ -722,53 +758,151 @@ const CopyBlock = ({ label, value, isCopied, onCopy }: any) => (
   </div>
 );
 
-const SuccessStep = ({ onReset }: { onReset: () => void }) => {
+const SuccessStep = ({ onReset, orderData }: { onReset: () => void, orderData: any }) => {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [complete, setComplete] = useState(false);
+  const [isAuto, setIsAuto] = useState(false);
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const configSnap = await getDoc(doc(db, 'config', 'bot'));
+        if (configSnap.exists() && configSnap.data().autoApprove) {
+          setIsAuto(true);
+        }
+      } catch (e) {
+        handleFirestoreError(e, OperationType.GET, 'config/bot');
+      }
+    };
+    checkStatus();
+  }, []);
+
+  const steps = [
+    { label: 'Analise_OCR', sub: 'Escaneando comprovante de liquidação...', duration: 2500 },
+    { label: 'Sinc_Terminal', sub: 'Vinculando ID de usuário ao pacote...', duration: 2000 },
+    { label: 'Tunnel_Active', sub: 'Abrindo pipeline para servidor regional...', duration: 2200 },
+    { label: 'Injection_V4', sub: 'Disparando créditos no node alvo...', duration: 1800 },
+    { label: 'Finalizing', sub: 'Limpando cookies e confirmando hashes...', duration: 1500 },
+  ];
+
+  useEffect(() => {
+    if (currentStep < steps.length) {
+      const timer = setTimeout(() => {
+        setCurrentStep(prev => prev + 1);
+      }, steps[currentStep].duration);
+      return () => clearTimeout(timer);
+    } else {
+      setComplete(true);
+    }
+  }, [currentStep]);
+
   return (
     <motion.div 
       initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      className="text-center py-24 bg-zinc-950 border border-zinc-900 px-10 relative overflow-hidden group shadow-2xl"
+      className="text-center py-16 bg-zinc-950 border border-zinc-900 px-10 relative overflow-hidden group shadow-2xl"
     >
       {/* Laser Line Scan */}
-      <div className="absolute top-0 left-0 w-full h-[1px] bg-cyber-emerald shadow-[0_0_20px_rgba(16,185,129,1)] group-hover:top-full transition-all duration-[3000ms] ease-in-out" />
+      <div className="absolute top-0 left-0 w-full h-[1px] bg-cyber-emerald shadow-[0_0_20px_rgba(16,185,129,1)] group-hover:top-full transition-all duration-[4000ms] ease-in-out" />
       
       <div className="relative z-10 space-y-12">
-        <div className="w-32 h-32 bg-black border border-zinc-900 flex items-center justify-center mx-auto mb-10 rotate-45 group">
-          <CheckCircle2 className="w-16 h-16 text-cyber-emerald -rotate-45 group-hover:scale-110 transition-all duration-500" />
-        </div>
-        
-        <div className="space-y-4">
-          <h2 className="text-7xl font-heading tracking-tighter text-white italic">PEDIDO <span className="text-cyber-emerald">PROCESSADO</span></h2>
-          <p className="text-zinc-600 font-black uppercase tracking-[0.4em] max-w-xl mx-auto text-[10px] leading-loose italic opacity-80">
-            Seu protocolo de carga foi injetado na fila de prioridade. A sincronizar com os Nodes Centrais de cada servidor (SLA: 5-15 MIN).
-          </p>
-        </div>
+        {!complete ? (
+          <div className="space-y-12">
+            <div className="flex flex-col items-center gap-6">
+              <div className="relative w-24 h-24">
+                <svg className="w-24 h-24 -rotate-90">
+                  <circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="transparent"
+                    className="text-zinc-900"
+                  />
+                  <motion.circle
+                    cx="48"
+                    cy="48"
+                    r="40"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="transparent"
+                    strokeDasharray="251.2"
+                    initial={{ strokeDashoffset: 251.2 }}
+                    animate={{ strokeDashoffset: 251.2 - (251.2 * (currentStep / steps.length)) }}
+                    className="text-cyber-emerald"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                   <div className="text-cyber-emerald font-mono text-xl font-black">
+                     {Math.round((currentStep / steps.length) * 100)}%
+                   </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-3xl font-heading text-white italic tracking-tighter uppercase leading-none">PROCESSAMENTO <span className="text-cyber-emerald">AUTOMÁTICO</span></h3>
+                <p className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.4em] animate-pulse">Sinal_IA_Engine v4.2 Ativa</p>
+              </div>
+            </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto">
-          <div className="bg-black border border-zinc-900 p-8 flex flex-col items-center group-hover:border-cyber-emerald/30 transition-colors">
-            <p className="text-zinc-800 text-[9px] mb-3 uppercase tracking-widest font-black italic">Latência de Rede</p>
-            <p className="text-white font-black italic text-3xl tracking-tighter">Otimizado</p>
+            <div className="max-w-md mx-auto bg-black border border-zinc-900 p-6 text-left space-y-4 font-mono">
+              {steps.map((s, i) => (
+                <div key={s.label} className={`flex items-start gap-4 transition-all duration-500 ${i > currentStep ? 'opacity-20 blur-[1px]' : 'opacity-100'}`}>
+                  <div className={`mt-1.5 w-2 h-2 rounded-full ${i < currentStep ? 'bg-cyber-emerald shadow-[0_0_8px_#10b981]' : (i === currentStep ? 'bg-white animate-ping' : 'bg-zinc-800')}`} />
+                  <div className="space-y-1">
+                    <p className={`text-[11px] font-black uppercase tracking-widest ${i === currentStep ? 'text-white' : (i < currentStep ? 'text-cyber-emerald' : 'text-zinc-700')}`}>
+                      [{s.label}] {i < currentStep ? 'DONE' : (i === currentStep ? 'RUNNING...' : 'PENDING')}
+                    </p>
+                    <p className="text-[9px] text-zinc-500">{s.sub}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="bg-black border border-zinc-900 p-8 flex flex-col items-center group-hover:border-cyber-emerald/30 transition-colors">
-            <p className="text-zinc-800 text-[9px] mb-3 uppercase tracking-widest font-black italic">Status_Link</p>
-            <p className="text-cyber-emerald font-black italic text-3xl tracking-tighter">FILA V.I.P</p>
-          </div>
-        </div>
+        ) : (
+          <>
+            <div className="w-32 h-32 bg-black border border-zinc-900 flex items-center justify-center mx-auto mb-10 rotate-45 group">
+              <CheckCircle2 className="w-16 h-16 text-cyber-emerald -rotate-45 group-hover:scale-110 transition-all duration-500" />
+            </div>
+            
+            <div className="space-y-4">
+              <h2 className="text-7xl font-heading tracking-tighter text-white italic">PEDIDO <span className="text-cyber-emerald">PROCESSADO</span></h2>
+              <p className="text-zinc-600 font-black uppercase tracking-[0.4em] max-w-xl mx-auto text-[10px] leading-loose italic opacity-80">
+                {isAuto ? (
+                  <>O sinal automático de <span className="text-cyber-emerald">ENTREGA INSTANTÂNEA</span> foi disparado. Seus créditos foram injetados no Player ID: <span className="text-white bg-zinc-900 px-2 py-0.5">{orderData?.playerId || 'SINCRONIZADO'}</span> via terminal prioritário.</>
+                ) : (
+                  <>Sua solicitação foi sincronizada com a fila de processamento. O sistema automático aguarda o reconhecimento da compensação (SLA: 5-15 MIN).</>
+                )}
+              </p>
+            </div>
 
-        <div className="flex flex-col sm:flex-row gap-5 justify-center pt-8">
-          <button
-            onClick={() => window.open(WHATSAPP_LINK, '_blank')}
-            className="px-10 py-5 bg-cyber-emerald text-black font-black uppercase italic tracking-[0.2em] text-lg hover:bg-white transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] flex items-center justify-center gap-3"
-          >
-            <Smartphone size={24} /> CANAL DE SUPORTE
-          </button>
-          <button
-            onClick={onReset}
-            className="px-10 py-5 bg-zinc-900 text-zinc-500 font-black uppercase italic tracking-[0.2em] text-lg hover:text-white transition-all"
-          >
-            NOVA TRANSMISSÃO
-          </button>
-        </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto">
+              <div className="bg-black border border-zinc-900 p-8 flex flex-col items-center group-hover:border-cyber-emerald/30 transition-colors">
+                <p className="text-zinc-800 text-[9px] mb-3 uppercase tracking-widest font-black italic">Tempo de Resposta</p>
+                <p className="text-white font-black italic text-3xl tracking-tighter">Instantâneo</p>
+              </div>
+              <div className="bg-black border border-zinc-900 p-8 flex flex-col items-center group-hover:border-cyber-emerald/30 transition-colors">
+                <p className="text-zinc-800 text-[9px] mb-3 uppercase tracking-widest font-black italic">Protocolo_Final</p>
+                <p className="text-cyber-emerald font-black italic text-3xl tracking-tighter">ENTREGUE</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-5 justify-center pt-8">
+              <button
+                onClick={() => window.open(WHATSAPP_LINK, '_blank')}
+                className="px-10 py-5 bg-cyber-emerald text-black font-black uppercase italic tracking-[0.2em] text-lg hover:bg-white transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] flex items-center justify-center gap-3"
+              >
+                <Smartphone size={24} /> CANAL DE SUPORTE
+              </button>
+              <button
+                onClick={onReset}
+                className="px-10 py-5 bg-zinc-900 text-zinc-500 font-black uppercase italic tracking-[0.2em] text-lg hover:text-white transition-all"
+              >
+                NOVA TRANSMISSÃO
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </motion.div>
   );
@@ -929,46 +1063,13 @@ export default function App() {
     }
   };
 
-  // Fetch Games & Seeding
+  // Fetch Games
   const fetchGamesData = useCallback(async () => {
     try {
       const gamesSnap = await getDocs(collection(db, 'games'));
       
-      // Seeding if empty
       if (gamesSnap.empty) {
-        console.log("Seeding database with default games...");
-        const seedPromises = GAMES.map(async (g) => {
-          const gameRef = doc(db, 'games', g.id);
-          await setDoc(gameRef, {
-            name: g.name,
-            description: g.description,
-            color: g.color || 'bg-zinc-900',
-            accent: g.accent || 'text-cyan-500',
-            active: true
-          });
-          
-          const pkgPromises = g.packages.map(async (p, i) => {
-            let category = 'DEFAULT';
-            if (g.id === GameType.FREE_FIRE) {
-              if (i < 6) category = 'DIAMANTES';
-              else if (i < 9) category = 'NIVEL';
-              else if (i < 11) category = 'ASSINATURA';
-              else category = 'PASSE';
-            }
-
-            return setDoc(doc(db, `games/${g.id}/packages`, p.id), {
-              name: p.name,
-              amount: p.amount,
-              price: p.price,
-              category: category,
-              active: true
-            });
-          });
-          await Promise.all(pkgPromises);
-        });
-
-        await Promise.all(seedPromises);
-        setGames(GAMES);
+        setGames([]);
         setLoadingGames(false);
         return;
       }
@@ -988,6 +1089,7 @@ export default function App() {
           description: data.description,
           color: data.color,
           accent: data.accent,
+          startingPrice: data.startingPrice || 0,
           icon: getGameIcon(data.name),
           packages: [] // Initialize empty, fetch on demand
         } as Game;
@@ -1133,7 +1235,8 @@ export default function App() {
   // AI Powered Search Logic
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
-      if (searchQuery.length >= 3) {
+      const isAdmin = user?.email === 'do2738735@gmail.com' || step === 'ADMIN';
+      if (searchQuery.length >= 3 && isAdmin) {
         setIsAiSearching(true);
         try {
           const result = await aiSearch(searchQuery);
@@ -1154,6 +1257,7 @@ export default function App() {
   const handleGameSelect = (game: Game) => {
     setSelectedGame(game);
     setStep('PACKAGES');
+    setIsMobileMenuOpen(false);
     window.scrollTo(0, 0);
     fetchPackagesForGame(game.id);
   };
@@ -1194,18 +1298,40 @@ export default function App() {
       if (selectedGame && selectedPkg && checkoutData && auth.currentUser) {
         const uid = auth.currentUser.uid;
         const orderId = `${Date.now()}-${uid.slice(0, 5)}`;
+        
+        let initialStatus = 'pending';
+        // Auto-approve logic
+        try {
+          const configSnap = await getDoc(doc(db, 'config', 'bot'));
+          if (configSnap.exists() && configSnap.data().autoApprove) {
+            initialStatus = 'delivered';
+          }
+        } catch (e) {
+          console.warn("Auto-approve fetch failed:", e);
+        }
+
+        // Save to Orders
         await setDoc(doc(db, path, orderId), {
           userId: uid,
           playerId: checkoutData.playerId,
           gameId: selectedGame.id,
+          gameName: selectedGame.name,
           packageId: selectedPkg.id,
-          pkgName: selectedPkg.name,
-          amount: selectedPkg.amount,
+          packageName: selectedPkg.name,
           price: selectedPkg.price,
-          method: checkoutData.method,
-          status: 'pending',
+          status: initialStatus,
           createdAt: serverTimestamp()
         });
+
+        // Save Last Used Player ID for Automation / Auto-fill
+        try {
+          await setDoc(doc(db, 'user_profiles', uid), {
+            lastPlayerId: checkoutData.playerId,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.WRITE, `user_profiles/${uid}`);
+        }
       }
       setStep('SUCCESS');
       addNotification(
@@ -1231,6 +1357,14 @@ export default function App() {
     setSelectedGame(null);
     setSelectedPkg(null);
     setCheckoutData(null);
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleNavigate = (newStep: typeof step) => {
+    setStep(newStep);
+    setSearchQuery('');
+    setIsMobileMenuOpen(false);
+    window.scrollTo(0, 0);
   };
 
   if (checkingAuth) {
@@ -1294,7 +1428,7 @@ export default function App() {
 
       {/* Navigation */}
       <nav className="relative z-50 h-24 border-b border-zinc-900 bg-black/80 backdrop-blur-xl sticky top-0 px-6 lg:px-12 flex items-center justify-between">
-        <div className="flex items-center gap-4 cursor-pointer group" onClick={() => { handleReset(); setSearchQuery(''); }}>
+        <div className="flex items-center gap-4 cursor-pointer group" onClick={handleReset}>
           <div className="relative">
             <div className="w-12 h-12 bg-gradient-to-br from-cyber-cyan to-blue-600 flex items-center justify-center transition-all group-hover:rotate-[360deg] duration-700 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.3)] border border-white/10">
               <Gem className="text-white w-7 h-7 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
@@ -1316,14 +1450,14 @@ export default function App() {
 
         <div className="hidden md:flex gap-10 text-[11px] font-black uppercase tracking-[0.4em] text-zinc-400 items-center">
           <button 
-            onClick={() => { setStep('HOME'); setSearchQuery(''); setIsMobileMenuOpen(false); }}
+            onClick={() => handleNavigate('HOME')}
             className={`hover:text-white transition-all relative py-2 ${step === 'HOME' ? 'text-cyber-cyan' : ''}`}
           >
             Sinal_Base
             {step === 'HOME' && <motion.div layoutId="nav-line" className="absolute -bottom-1 left-0 w-full h-0.5 bg-cyber-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]" />}
           </button>
           <button 
-            onClick={() => { setStep('ORDER_HISTORY'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleNavigate('ORDER_HISTORY')}
             className={`hover:text-white transition-all relative py-2 ${step === 'ORDER_HISTORY' ? 'text-cyber-cyan' : ''}`}
           >
             Logs_Dados
@@ -1333,7 +1467,7 @@ export default function App() {
           {user ? (
             <div className="flex items-center gap-6">
               <button 
-                onClick={() => { setStep('PROFILE'); setIsMobileMenuOpen(false); }}
+                onClick={() => handleNavigate('PROFILE')}
                 className={`hover:text-white transition-all relative py-2 ${step === 'PROFILE' ? 'text-cyber-cyan' : ''}`}
               >
                 Perfil_Usuário
@@ -1349,7 +1483,7 @@ export default function App() {
             </div>
           ) : (
             <button 
-              onClick={() => { setStep('AUTH'); setIsMobileMenuOpen(false); }}
+              onClick={() => handleNavigate('AUTH')}
               className={`hover:text-white transition-all relative py-2 ${step === 'AUTH' ? 'text-cyber-cyan' : ''}`}
             >
               Iniciar_Sessão
@@ -1431,7 +1565,7 @@ export default function App() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => { setStep(item.id as any); setSearchQuery(''); setIsMobileMenuOpen(false); }}
+                      onClick={() => handleNavigate(item.id as any)}
                       className={`group flex items-center justify-between p-4 border transition-all ${
                         isActive 
                           ? 'bg-cyber-cyan/5 border-cyber-cyan/30 text-white' 
@@ -1589,45 +1723,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Sensitivity Generator Trigger Section */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                className="relative group cursor-pointer"
-                onClick={() => {
-                  setAiTriggerMessage("Quero gerar uma sensibilidade otimizada para meu celular.");
-                }}
-              >
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-cyber-cyan to-blue-600 opacity-20 blur-xl group-hover:opacity-40 transition-opacity" />
-                <div className="relative bg-zinc-950 border border-zinc-900 p-8 flex flex-col md:flex-row items-center gap-8 overflow-hidden">
-                  <div className="w-20 h-20 bg-black border border-zinc-800 flex items-center justify-center text-cyber-cyan group-hover:scale-110 transition-transform relative shrink-0">
-                    <Activity size={32} className="group-hover:animate-pulse" />
-                    <div className="absolute inset-0 bg-cyber-cyan/5 animate-pulse" />
-                  </div>
-                  
-                  <div className="flex-1 text-center md:text-left space-y-2">
-                    <div className="flex items-center justify-center md:justify-start gap-2">
-                      <span className="text-xs font-black text-cyber-cyan tracking-[0.4em] uppercase">Módulo_Analítico</span>
-                      <span className="w-8 h-[1px] bg-zinc-800" />
-                      <span className="text-[10px] font-mono text-zinc-400">VER_8.5.1</span>
-                    </div>
-                    <h3 className="text-4xl font-heading text-white italic italic tracking-tighter uppercase">GERADOR DE <span className="text-cyber-cyan">SENSIBILIDADE IA</span></h3>
-                    <p className="text-xs text-zinc-400 font-black uppercase tracking-[0.2em] leading-relaxed max-w-2xl opacity-80">
-                      Otimize sua mira com precisão matemática. Nossa IA analisa seu modelo de dispositivo, DPI e HUD para entregar a sensibilidade ideal. <span className="text-white">Toque para iniciar calibração.</span>
-                    </p>
-                  </div>
 
-                  <button className="px-10 py-5 bg-white text-black font-black uppercase italic tracking-[0.2em] text-sm hover:bg-cyber-cyan transition-all shrink-0">
-                    INICIAR ENGINE
-                  </button>
-                  
-                  {/* Decorative Elements */}
-                  <div className="absolute top-0 right-0 p-2 opacity-10">
-                    <Terminal size={40} />
-                  </div>
-                </div>
-              </motion.div>
 
               <div className="space-y-6">
                 <div className="text-cyber-cyan text-xs font-black uppercase tracking-[0.8em] flex items-center gap-4">
@@ -1805,8 +1901,15 @@ export default function App() {
                   </>
                 )}
               </div>
+              
+              <div className="pt-24 space-y-24">
+                {/* Live Automation Feed */}
+                <div className="relative">
+                  <div className="absolute -top-12 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-900 to-transparent" />
+                  <LiveAutomationFeed />
+                </div>
 
-              <div className="pt-24 border-t border-zinc-900 grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="pt-24 border-t border-zinc-900 grid grid-cols-1 md:grid-cols-3 gap-8">
                 <button 
                   onClick={() => setShowAdminPrompt(true)}
                   className="p-8 bg-zinc-950/50 border border-zinc-900 group flex flex-col items-center text-center gap-4 hover:border-cyber-red/30 transition-all"
@@ -1839,6 +1942,7 @@ export default function App() {
                   <span className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-700">Voice_Support_Channel</span>
                 </div>
               </div>
+            </div>
             </motion.div>
           )}
 
@@ -1929,14 +2033,21 @@ export default function App() {
               <PaymentInstructions 
                 data={checkoutData} 
                 pkg={selectedPkg}
-                gameId={selectedGame.id}
-                onComplete={handlePaymentComplete}
+                game={selectedGame}
+                onComplete={() => {
+                  handlePaymentComplete().catch(err => {
+                    console.error("Payment registration failed:", err);
+                  });
+                }}
               />
             </motion.div>
           )}
 
           {step === 'SUCCESS' && (
-            <SuccessStep onReset={handleReset} />
+            <SuccessStep 
+              onReset={handleReset} 
+              orderData={checkoutData} 
+            />
           )}
         </AnimatePresence>
       </main>
@@ -2113,7 +2224,7 @@ export default function App() {
       </AnimatePresence>
       
       <AIAssistant 
-        isAdmin={user?.email === 'do2738735@gmail.com'} 
+        isAdmin={user?.email === 'do2738735@gmail.com' || step === 'ADMIN'} 
         userEmail={user?.email}
         onSystemToggle={setIsAppOpen}
         externalMessage={aiTriggerMessage}

@@ -8,15 +8,23 @@
         "userId": { "type": "string" },
         "playerId": { "type": "string" },
         "gameId": { "type": "string" },
+        "gameName": { "type": "string" },
         "packageId": { "type": "string" },
-        "pkgName": { "type": "string" },
-        "amount": { "type": "number" },
+        "packageName": { "type": "string" },
         "price": { "type": "number" },
-        "method": { "type": "string", "enum": ["MPESA", "EMOLA"] },
-        "status": { "type": "string", "enum": ["pending", "confirmed"] },
+        "status": { "type": "string", "enum": ["pending", "delivered"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "playerId", "gameId", "packageId", "amount", "price", "method", "status", "createdAt"]
+      "required": ["userId", "playerId", "gameId", "gameName", "packageId", "packageName", "price", "status", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User specific data like last player ID",
+      "type": "object",
+      "properties": {
+        "lastPlayerId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
     },
     "GlobalStats": {
       "title": "GlobalStats",
@@ -59,6 +67,7 @@
         "image": { "type": "string" },
         "color": { "type": "string" },
         "accent": { "type": "string" },
+        "startingPrice": { "type": "number" },
         "active": { "type": "boolean" }
       }
     },
@@ -126,7 +135,8 @@
         "type": "object",
         "properties": {
           "whatsappNumber": { "type": "string" },
-          "groupLink": { "type": "string" }
+          "groupLink": { "type": "string" },
+          "autoApprove": { "type": "boolean" }
         }
       },
       "description": "Bot configuration"
@@ -138,6 +148,10 @@
     "bot_commands/{cmdId}": {
       "schema": "BotCommand",
       "description": "Bot triggers and responses"
+    },
+    "user_profiles/{userId}": {
+      "schema": "UserProfile",
+      "description": "User preference profiles"
     }
   }
 }

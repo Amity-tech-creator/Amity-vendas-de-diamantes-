@@ -27,6 +27,7 @@ export interface Game {
   color: string;
   accent: string;
   packages?: Package[];
+  startingPrice?: number;
 }
 
 export enum NotificationType {
