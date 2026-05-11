@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 
 // Firebase Imports
-import { db, auth, initFirebase } from './firebase';
+import { db, auth } from './firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { 
   collection, 
@@ -47,14 +47,13 @@ import {
   doc, 
   getDoc,
   serverTimestamp, 
-  getCountFromServer,
   query,
   where,
-  Timestamp,
   getDocs,
   orderBy,
   limit,
   onSnapshot,
+  getCountFromServer,
   getDocFromServer
 } from 'firebase/firestore';
 
@@ -63,21 +62,19 @@ import {
   Package, 
   Game, 
   NotificationType, 
-  Notification 
+  UserProfile as IUserProfile
 } from './types';
 
 import { 
   GAMES, 
-  PAYMENT_NUMBERS, 
   WHATSAPP_LINK, 
   WHATSAPP_SUPPORT_LINK 
 } from './constants';
 
 import { aiSearch } from './services/aiService';
+import { handleFirestoreError, reportFirestoreError, OperationType } from './utils';
 
-import { handleFirestoreError, OperationType } from './utils';
-
-// Lazy Load Heavy Components
+// Views and Components
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
 const OrderHistory = lazy(() => import('./components/OrderHistory'));
 const UserProfile = lazy(() => import('./components/UserProfile'));
@@ -85,889 +82,129 @@ const LoginScreen = lazy(() => import('./components/LoginScreen'));
 
 import { AIAssistant } from './components/AIAssistant';
 import { LiveAutomationFeed } from './components/LiveAutomationFeed';
+import { GameCard, PackageItem, PackageGrid } from './components/GameComponents';
+import { CheckoutForm, PaymentInstructions, SuccessStep } from './components/CheckoutViews';
+import { NotificationTray } from './components/NotificationTray';
+import { Notification } from './types';
 
-// --- Components ---
+// --- Layout Components ---
 
-const GameCard: FC<{ game: Game, onClick: () => void }> = ({ game, onClick }) => {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const accentColors: Record<string, string> = {
-    [GameType.FREE_FIRE]: 'text-cyber-orange',
-    [GameType.COD_MOBILE]: 'text-cyber-cyan',
-    [GameType.PUBG_MOBILE]: 'text-cyber-red',
-    [GameType.MOBILE_LEGENDS]: 'text-blue-400',
-    [GameType.VALORANT]: 'text-cyber-red'
-  };
+const SidebarItem = ({ icon: Icon, label, active, onClick, badge }: any) => (
+  <button
+    onClick={onClick}
+    className={`w-full flex items-center gap-4 px-6 py-4 transition-all duration-300 group relative ${
+      active 
+      ? 'bg-zinc-900 text-cyber-cyan border-r-2 border-cyber-cyan' 
+      : 'text-zinc-500 hover:text-white hover:bg-zinc-950/50'
+    }`}
+  >
+    <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
+      <Icon size={20} />
+    </div>
+    <span className="text-[10px] font-black uppercase tracking-[0.3em] italic">{label}</span>
+    {badge && (
+      <span className="absolute right-4 px-1.5 py-0.5 bg-cyber-emerald text-black text-[8px] font-black rounded-sm animate-pulse">
+        {badge}
+      </span>
+    )}
+  </button>
+);
 
-  const borderColors: Record<string, string> = {
-    [GameType.FREE_FIRE]: 'border-cyber-orange/20 group-hover:border-cyber-orange',
-    [GameType.COD_MOBILE]: 'border-cyber-cyan/20 group-hover:border-cyber-cyan',
-    [GameType.PUBG_MOBILE]: 'border-cyber-red/20 group-hover:border-cyber-red',
-    [GameType.MOBILE_LEGENDS]: 'border-blue-500/20 group-hover:border-blue-500',
-    [GameType.VALORANT]: 'border-cyber-red/20 group-hover:border-cyber-red'
-  };
-
-  const minPrice = (game.packages && game.packages.length > 0)
-    ? Math.min(...game.packages.map((p: any) => p.price)) 
-    : (game.startingPrice || 0);
-
-  const displayPrice = (game.packages && game.packages.length > 0)
-    ? game.packages[0].price
-    : (game.startingPrice || 0);
-
-  return (
-    <motion.div
-      whileHover={{ 
-        y: -12,
-        scale: 1.02,
-        transition: { type: "spring", stiffness: 400, damping: 17 }
-      }}
-      whileTap={{ scale: 1.05, opacity: 0.8 }}
-      initial={{ opacity: 0, scale: 0.9, y: 30 }}
-      whileInView={{ opacity: 1, scale: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
-      onClick={onClick}
-      className={`group relative h-64 cursor-pointer overflow-hidden bg-zinc-950/80 border transition-all duration-500 hover:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8)] ${borderColors[game.id]}`}
-    >
-      {/* Visual Glitch Decor */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-white/5 to-transparent blur-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
-      
-      <div className="relative h-full p-8 flex flex-col justify-between z-10">
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div 
-              className={`p-4 bg-black border border-zinc-900 ${accentColors[game.id]} shadow-[0_0_15px_rgba(0,0,0,0.5)] relative cursor-help transition-transform hover:scale-110`}
-              onMouseEnter={() => setShowTooltip(true)}
-              onMouseLeave={() => setShowTooltip(false)}
-            >
-              <game.icon size={24} />
-              
-              <AnimatePresence>
-                {showTooltip && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                    className="absolute z-[100] bottom-full mb-4 left-1/2 -translate-x-1/2 w-48 p-4 bg-black border border-zinc-900 shadow-[0_0_30px_rgba(0,0,0,0.8)] pointer-events-none"
-                    style={{ backdropFilter: 'blur(10px)' }}
-                  >
-                     <div className="space-y-3">
-                        <div className="flex justify-between items-center text-xs">
-                           <span className="text-zinc-400 uppercase font-black tracking-widest">Estoque</span>
-                           <span className="text-white font-mono">{(game.packages?.length || 0)} Itens</span>
-                        </div>
-                        <div className="flex justify-between items-center text-xs">
-                           <span className="text-zinc-400 uppercase font-black tracking-widest">Base</span>
-                           <span className="text-cyber-cyan font-mono">{minPrice},00 MT</span>
-                        </div>
-                        <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
-                        <div className="text-[10px] text-center text-zinc-400 uppercase tracking-tighter font-bold">Infor_Nodes_Active</div>
-                     </div>
-                     {/* Triangle pointer */}
-                     <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-black border-r border-b border-zinc-900 rotate-45" />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyber-emerald animate-pulse" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Protocolo.V4</span>
-            </div>
-          </div>
-          
-          <div>
-            <h2 className="text-4xl font-heading text-white italic tracking-tighter uppercase leading-none">{game.name}</h2>
-            <p className="text-[11px] text-zinc-400 mt-2 font-black uppercase tracking-widest italic opacity-80">
-              {game.description}
-            </p>
-          </div>
+const Sidebar = ({ currentStep, setStep, isAdmin, userProfile }: any) => (
+  <aside className="w-72 bg-black border-r border-zinc-900 flex flex-col h-full overflow-y-auto scrollbar-hide">
+    <div className="p-8 border-b border-zinc-900 flex flex-col items-center gap-4">
+      <div className="relative group">
+        <div className="absolute -inset-1 bg-gradient-to-r from-cyber-cyan to-cyber-emerald opacity-20 blur group-hover:opacity-40 transition-opacity" />
+        <div className="relative w-16 h-16 bg-black border border-zinc-800 flex items-center justify-center">
+          <Gem className="text-cyber-cyan w-8 h-8 group-hover:scale-110 transition-transform" />
         </div>
+      </div>
+      <div className="text-center">
+        <h1 className="text-2xl font-heading text-white italic tracking-tighter uppercase">GRID <span className="text-cyber-cyan">SIGNAL</span></h1>
+        <p className="text-[8px] text-zinc-600 font-black uppercase tracking-[0.4em] mt-1">Sinal_IA Engine v4.2</p>
+      </div>
+    </div>
 
-        <div className="flex justify-between items-end pt-4 border-t border-zinc-900/50">
+    <div className="flex-1 py-8">
+      <div className="px-6 mb-6">
+        <p className="text-[9px] font-black text-zinc-700 uppercase tracking-[0.4em] mb-4 italic">Protocolos_Privados</p>
+        <div className="space-y-1">
+          <SidebarItem 
+            icon={Home} 
+            label="Dashboard" 
+            active={currentStep === 'HOME' || currentStep === 'PACKAGES' || currentStep === 'FORM' || currentStep === 'PAYMENT' || currentStep === 'SUCCESS'} 
+            onClick={() => setStep('HOME')} 
+          />
+          <SidebarItem 
+            icon={History} 
+            label="Meus Pedidos" 
+            active={currentStep === 'ORDER_HISTORY'} 
+            onClick={() => setStep('ORDER_HISTORY')} 
+          />
+          <SidebarItem 
+            icon={User} 
+            label="Perfil Node" 
+            active={currentStep === 'PROFILE'} 
+            onClick={() => setStep('PROFILE')} 
+          />
+        </div>
+      </div>
+
+      <div className="px-6 mb-6">
+        <p className="text-[9px] font-black text-zinc-700 uppercase tracking-[0.4em] mb-4 italic">Operações_Sinal</p>
+        <div className="space-y-1">
+          <SidebarItem 
+            icon={Activity} 
+            label="Live Feed" 
+            onClick={() => {}} 
+            badge="LIVE"
+          />
+          <SidebarItem 
+            icon={MessageSquare} 
+            label="Suporte" 
+            onClick={() => window.open(WHATSAPP_SUPPORT_LINK, '_blank')} 
+          />
+        </div>
+      </div>
+
+      {isAdmin && (
+        <div className="px-6 mb-6">
+          <p className="text-[9px] font-black text-cyber-cyan/50 uppercase tracking-[0.4em] mb-4 italic">Master_Control</p>
           <div className="space-y-1">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Fluxo Inicial</p>
-            <p className={`text-2xl font-black italic tracking-tighter ${accentColors[game.id]}`}>
-              {displayPrice},00 <span className="text-xs">MT</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-zinc-400 font-black italic text-[11px] tracking-widest group-hover:text-white transition-all">
-            MODULO.CMD <ChevronRight className="w-4 h-4 text-cyber-cyan" />
-          </div>
-        </div>
-      </div>
-
-      {/* Grid Overlay */}
-      <div className="absolute inset-0 bg-grid-pattern opacity-5 pointer-events-none" />
-    </motion.div>
-  );
-};
-
-const PackageSkeleton = () => (
-  <div className="flex items-center justify-between p-6 bg-zinc-950/20 border border-zinc-900/50 animate-pulse">
-    <div className="flex items-center gap-6">
-      <div className="w-12 h-12 bg-zinc-900/50 border border-zinc-800" />
-      <div className="space-y-2">
-        <div className="w-48 h-6 bg-zinc-900/50" />
-        <div className="w-24 h-3 bg-zinc-900/30" />
-      </div>
-    </div>
-    <div className="flex flex-col items-end gap-2">
-      <div className="w-16 h-2 bg-zinc-900/30" />
-      <div className="w-24 h-10 bg-zinc-900/50" />
-    </div>
-  </div>
-);
-
-const PackageGrid = ({ 
-  game, 
-  onSelect, 
-  onBack,
-  isLoading 
-}: { 
-  game: Game, 
-  onSelect: (pkg: Package) => void, 
-  onBack: () => void,
-  isLoading: boolean
-}) => {
-  const [sortOrder, setSortOrder] = useState<'default' | 'asc' | 'desc'>('default');
-
-  const packages = game.packages || [];
-
-  const getSortedPackages = (pkgs: Package[]) => {
-    if (sortOrder === 'default') return pkgs;
-    return [...pkgs].sort((a, b) => {
-      if (sortOrder === 'asc') return a.price - b.price;
-      return b.price - a.price;
-    });
-  };
-
-  const sortedAll = getSortedPackages(packages);
-  const isSorted = sortOrder !== 'default';
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="space-y-8"
-    >
-      <button 
-        onClick={onBack}
-        className="group flex items-center gap-3 text-zinc-600 hover:text-white transition-all uppercase text-[10px] font-black tracking-[0.3em]"
-      >
-        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Retornar ao Setor de Jogos
-      </button>
-
-      <div className="flex flex-col md:flex-row items-center md:items-end gap-6 pb-8 border-b border-zinc-900">
-        <div className={`p-4 bg-black border border-zinc-800 ${game.accent}`}>
-          <game.icon size={40} />
-        </div>
-        <div className="text-center md:text-left flex-1">
-          <h2 className="text-6xl font-heading text-white">{game.name.toUpperCase()}</h2>
-          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.4em] mt-3 italic flex items-center justify-center md:justify-start gap-2">
-            <span className="w-2 h-2 bg-cyber-emerald rounded-full animate-pulse" /> Protocolo de Recarga Ativo
-          </p>
-        </div>
-      </div>
-
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex items-center justify-between px-2">
-          <div className="text-[10px] text-zinc-500 font-black uppercase tracking-widest italic flex items-center gap-2">
-            <Search size={14} className="text-zinc-700" /> Filtragem de Preços
-          </div>
-          <div className="flex bg-zinc-950 border border-zinc-900 p-1">
-            <SortTrigger active={sortOrder === 'default'} onClick={() => setSortOrder('default')}>
-              Padrão
-            </SortTrigger>
-            <SortTrigger active={sortOrder === 'asc'} onClick={() => setSortOrder('asc')}>
-              <ArrowUpNarrowWide size={12} className="mr-2" /> Menor Preço
-            </SortTrigger>
-            <SortTrigger active={sortOrder === 'desc'} onClick={() => setSortOrder('desc')}>
-              <ArrowDownWideNarrow size={12} className="mr-2" /> Maior Preço
-            </SortTrigger>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3">
-          {isLoading ? (
-            <>
-              <CategoryDivider label="Sincronizando Nodes" sublabel="Carregando pacotes disponíveis..." />
-              {[...Array(6)].map((_, i) => (
-                <PackageSkeleton key={i} />
-              ))}
-            </>
-          ) : game.id === GameType.FREE_FIRE && !isSorted ? (
-            <>
-              <CategoryDivider label="Diamantes" />
-              {packages.filter(p => !p.category || p.category === 'DIAMANTES' || p.category === 'DEFAULT').map((pkg, idx) => (
-                <PackageItem key={pkg.id} pkg={pkg} idx={idx} onSelect={() => onSelect(pkg)} />
-              ))}
-              
-              {packages.some(p => p.category === 'NIVEL') && (
-                <>
-                  <CategoryDivider label="Pacotes de Nível" sublabel="Exclusivo: 1x por conta" />
-                  {packages.filter(p => p.category === 'NIVEL').map((pkg, idx) => (
-                    <PackageItem key={pkg.id} pkg={pkg} idx={idx} onSelect={() => onSelect(pkg)} />
-                  ))}
-                </>
-              )}
-
-              {packages.some(p => p.category === 'ASSINATURA') && (
-                <>
-                  <CategoryDivider label="Assinaturas" />
-                  {packages.filter(p => p.category === 'ASSINATURA').map((pkg, idx) => (
-                    <PackageItem key={pkg.id} pkg={pkg} idx={idx} onSelect={() => onSelect(pkg)} />
-                  ))}
-                </>
-              )}
-
-              {packages.some(p => p.category === 'PASSE') && (
-                <>
-                  <CategoryDivider label="Passe Booyah" />
-                  {packages.filter(p => p.category === 'PASSE').map((pkg, idx) => (
-                    <PackageItem key={pkg.id} pkg={pkg} idx={idx} onSelect={() => onSelect(pkg)} />
-                  ))}
-                </>
-              )}
-            </>
-          ) : (
-            sortedAll.map((pkg, idx) => (
-              <PackageItem key={pkg.id} pkg={pkg} idx={idx} onSelect={() => onSelect(pkg)} />
-            ))
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-const SortTrigger = ({ active, onClick, children }: any) => (
-  <button
-    onClick={onClick}
-    className={`flex items-center px-4 py-2 text-[8px] font-black uppercase tracking-widest transition-all ${
-      active 
-      ? 'bg-zinc-800 text-cyber-cyan shadow-[0_0_10px_rgba(6,182,212,0.2)]' 
-      : 'text-zinc-600 hover:text-zinc-400'
-    }`}
-  >
-    {children}
-  </button>
-);
-
-const CategoryDivider = ({ label, sublabel }: { label: string, sublabel?: string }) => (
-  <div className="relative py-8 flex flex-col items-center">
-    <div className="absolute inset-0 flex items-center">
-      <div className="w-full border-t border-zinc-900"></div>
-    </div>
-    <div className="relative bg-black px-6 flex flex-col items-center">
-      <span className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.5em]">{label}</span>
-      {sublabel && <span className="text-[8px] text-cyber-cyan font-bold uppercase mt-1 tracking-widest opacity-60">[{sublabel}]</span>}
-    </div>
-  </div>
-);
-
-const PackageItem: FC<{ pkg: Package, idx: number, onSelect: () => void }> = ({ pkg, idx, onSelect }) => {
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ 
-        delay: idx * 0.05,
-        type: "spring",
-        stiffness: 400,
-        damping: 30
-      }}
-      whileHover={{ scale: 1.01, x: 10, backgroundColor: "rgba(24, 24, 27, 0.8)" }}
-      whileTap={{ 
-        scale: 0.97, 
-        filter: "brightness(1.5)",
-        boxShadow: "0 0 20px rgba(6, 182, 212, 0.3)",
-        borderColor: "rgba(6, 182, 212, 0.8)",
-        transition: { duration: 0.1 }
-      }}
-      onClick={onSelect}
-      className={`group flex items-center justify-between p-6 bg-zinc-900/30 border border-zinc-900 hover:border-cyber-cyan/50 cursor-pointer transition-all ${pkg.active === false ? 'opacity-30 grayscale pointer-events-none' : ''}`}
-    >
-      <div className="flex items-center gap-6">
-        <div className="w-12 h-12 bg-black border border-zinc-800 flex items-center justify-center text-zinc-700 font-mono text-xs group-hover:text-cyber-cyan transition-colors">
-          #{String(idx + 1).padStart(2, '0')}
-        </div>
-        <div>
-          <h4 className="text-xl font-bold text-white group-hover:text-cyber-cyan transition-colors italic tracking-tight">{pkg.name}</h4>
-          {/* Oculto Ref ID para usuários comuns, mantendo o visual limpo */}
-        </div>
-      </div>
-      
-      <div className="flex flex-col items-end">
-        <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-1">Custo Terminal</span>
-        <div className="px-6 py-2 bg-zinc-800 text-zinc-100 font-black text-xl italic tracking-tighter group-hover:bg-cyber-cyan group-hover:text-black transition-all shadow-lg">
-          {pkg.price},00 <span className="text-xs">MT</span>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-const VodacomLogo = () => (
-  <div className="w-10 h-10 bg-cyber-red rounded-lg flex items-center justify-center border border-white/10 shadow-[0_0_15px_rgba(239,68,68,0.3)] shrink-0">
-    <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center">
-      <div className="w-3 h-3 bg-cyber-red rounded-full" />
-    </div>
-  </div>
-);
-
-const MovitelLogo = () => (
-  <div className="w-10 h-10 bg-cyber-orange rounded-lg flex items-center justify-center border border-white/10 shadow-[0_0_15px_rgba(249,115,22,0.3)] shrink-0">
-    <span className="text-white font-black text-xl italic tracking-tighter">m</span>
-  </div>
-);
-
-const CheckoutForm = ({ 
-  game, 
-  pkg, 
-  onConfirm, 
-  onBack,
-  onHelp
-}: { 
-  game: Game, 
-  pkg: Package, 
-  onConfirm: (data: { playerId: string, method: 'MPESA' | 'EMOLA' }) => void,
-  onBack: () => void,
-  onHelp?: (msg: string) => void
-}) => {
-  const [playerId, setPlayerId] = useState('');
-  const [method, setMethod] = useState<'MPESA' | 'EMOLA'>('MPESA');
-  const [touched, setTouched] = useState(false);
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      if (!auth.currentUser) return;
-      try {
-        const snap = await getDoc(doc(db, 'user_profiles', auth.currentUser.uid));
-        if (snap.exists() && snap.data().lastPlayerId) {
-          setPlayerId(snap.data().lastPlayerId);
-        }
-      } catch (e) {
-        console.warn("Profile fetch failed:", e);
-      }
-    };
-    fetchProfile();
-  }, []);
-
-  const handleHelpClick = () => {
-    onHelp?.(`Preciso de ajuda com a recarga de ${game.name}. Estou tentando comprar o pacote de ${pkg.name} via ${method}.`);
-  };
-
-  const validatePlayerId = (id: string) => {
-    if (!id) return 'Identificação Requerida no Node';
-    const numericRegex = /^\d+$/;
-    if (!numericRegex.test(id)) return 'Erro de Sintaxe: Use apenas caracteres numéricos';
-    if (id.length < 6) return 'Sincronização Falhou: ID Muito Curto (Mín. 6 Dígitos)';
-    if (id.length > 15) return 'Sincronização Falhou: ID Muito Longo (Máx. 15 Dígitos)';
-    return null;
-  };
-
-  const error = playerId.length > 0 ? validatePlayerId(playerId) : (touched ? 'Identificação Requerida no Node' : null);
-  const isValid = playerId.length > 0 && !validatePlayerId(playerId);
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="max-w-3xl mx-auto space-y-8"
-    >
-      <button 
-        onClick={onBack}
-        className="group flex items-center gap-3 text-zinc-600 hover:text-white transition-all uppercase text-[10px] font-black tracking-[0.3em]"
-      >
-        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Retornar ao Catálogo
-      </button>
-
-      <div className="bg-zinc-950 border border-zinc-900 shadow-2xl relative overflow-hidden group">
-        <div className={`absolute top-0 left-0 w-full h-[2px] transition-all duration-700 ${error ? 'bg-cyber-red shadow-[0_0_20px_rgba(239,68,68,0.6)]' : (isValid ? 'bg-cyber-emerald shadow-[0_0_20px_rgba(16,185,129,0.6)]' : 'bg-zinc-800')}`} />
-        
-        <div className="p-8 lg:p-14 space-y-14">
-          <div className="flex flex-col md:flex-row justify-between items-start gap-8">
-            <div className="space-y-4">
-              <div className="flex items-center gap-5">
-                <motion.div 
-                  whileHover={{ scale: 1.1, rotate: 5 }}
-                  className={`p-5 bg-black border-2 border-zinc-900 shadow-lg ${game.accent}`}
-                >
-                  <game.icon size={28} />
-                </motion.div>
-                <div>
-                  <h3 className="text-5xl font-heading text-white italic tracking-tighter leading-none">CHECKOUT <span className="text-cyber-cyan neon-glow">PROTOCOLO</span></h3>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.4em]">{game.name.toUpperCase()}</span>
-                    <div className="w-2 h-2 bg-zinc-800 rounded-full" />
-                    <span className="text-[10px] font-black text-cyber-cyan uppercase tracking-[0.4em]">{pkg.name}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="text-right flex items-center md:items-end flex-col gap-2">
-              <div className="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-sm">
-                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest italic tracking-[0.3em]">AES_ENCRYPTION_V2</span>
-              </div>
-              <div className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] px-4 py-1.5 border transition-all duration-500 rounded-sm ${error ? 'text-cyber-red bg-cyber-red/10 border-cyber-red/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : (isValid ? 'text-cyber-emerald bg-cyber-emerald/10 border-cyber-emerald/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'text-zinc-600 border-zinc-900')}`}>
-                <Activity size={12} className={isValid ? 'animate-pulse' : ''} /> {error ? 'DADOS_INVÁLIDOS' : (isValid ? 'LINK_ESTÁVEL' : 'SINCRONIZANDO...')}
-              </div>
-            </div>
-          </div>
-          
-          <div className="space-y-10">
-            <div className="space-y-5">
-              <label className="flex items-center gap-3 text-[11px] font-black text-zinc-500 uppercase tracking-[0.5em] italic">
-                <CreditCard size={14} className="text-cyber-cyan" /> Método de Liquidação
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <MethodToggle 
-                  active={method === 'MPESA'} 
-                  onClick={() => setMethod('MPESA')} 
-                  label="M-PESA" 
-                  sub="Vodacom Mozambique"
-                  color="border-cyber-red"
-                  icon={<VodacomLogo />}
-                />
-                <MethodToggle 
-                  active={method === 'EMOLA'} 
-                  onClick={() => setMethod('EMOLA')} 
-                  label="E-MOLA" 
-                  sub="Movitel Mozambique"
-                  color="border-cyber-orange"
-                  icon={<MovitelLogo />}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <label className="flex items-center gap-2 text-[10px] font-black text-zinc-500 uppercase tracking-[0.4em] italic">
-                <User size={12} className={error ? 'text-cyber-red' : (isValid ? 'text-cyber-emerald' : 'text-cyber-cyan')} /> Identificação Global na Grid
-              </label>
-              <div className="relative">
-                <motion.input
-                  animate={{ x: error ? [-1, 1, -1, 1, 0] : 0 }}
-                  transition={{ duration: 0.1, repeat: error ? 2 : 0 }}
-                  type="text"
-                  value={playerId}
-                  onChange={(e) => {
-                    setPlayerId(e.target.value);
-                    if (!touched) setTouched(true);
-                  }}
-                  onBlur={() => setTouched(true)}
-                  placeholder="ID DO USUÁRIO..."
-                  className={`block w-full px-8 py-6 bg-black border focus:outline-none text-white placeholder:text-zinc-900 transition-all font-mono font-bold text-4xl tracking-[0.2em] outline-none shadow-inner ${
-                    error ? 'border-cyber-red text-cyber-red focus:border-cyber-red shadow-[0_0_20px_rgba(239,68,68,0.1)]' : (isValid ? 'border-cyber-emerald/50 focus:border-cyber-emerald text-cyber-emerald' : 'border-zinc-900 focus:border-cyber-cyan')
-                  }`}
-                />
-                <div className="absolute top-0 right-4 h-full flex items-center pointer-events-none">
-                  <span className={`text-[8px] font-black uppercase tracking-widest transition-colors ${error ? 'text-cyber-red' : (isValid ? 'text-cyber-emerald' : 'text-zinc-800')}`}>
-                    {error ? 'Err:_DATA_CORRUPTED' : (isValid ? 'Satus:_SYNCHRONIZED' : 'Awaiting_Input...')}
-                  </span>
-                </div>
-              </div>
-              <AnimatePresence>
-                {error && (
-                  <motion.p 
-                    initial={{ opacity: 0, height: 0 }} 
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="text-cyber-red text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
-                  >
-                    <AlertCircle size={12} className="animate-pulse" /> {error}
-                  </motion.p>
-                )}
-              </AnimatePresence>
-            </div>
-
-            <div className="p-8 bg-black border border-zinc-900 flex justify-between items-center group-hover:border-zinc-800 transition-colors">
-              <div className="space-y-1">
-                <p className="text-[9px] text-zinc-600 font-black uppercase tracking-[0.3em] italic">Câmbio em Realtime</p>
-                <p className="text-5xl font-heading text-white italic tracking-tighter">{pkg.price},00 <span className="text-lg">MT</span></p>
-              </div>
-              <div className="hidden sm:flex flex-col items-end gap-2">
-                <div className="flex gap-1">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="w-1 h-3 bg-cyber-cyan/20" />
-                  ))}
-                </div>
-                <span className="text-[8px] font-black text-zinc-800 uppercase">Load_Balancing...</span>
-              </div>
-            </div>
-
-            <button
-              disabled={!isValid}
-              onClick={() => onConfirm({ playerId, method })}
-              className={`w-full py-8 font-black uppercase italic tracking-[0.3em] text-2xl transition-all relative overflow-hidden group ${
-                isValid 
-                ? 'bg-cyber-cyan text-black hover:bg-white hover:shadow-[0_0_50px_rgba(6,182,212,0.4)]' 
-                : 'bg-zinc-900 text-zinc-800 cursor-not-allowed opacity-50'
-              }`}
-            >
-              <span className="relative z-10 flex items-center justify-center gap-4">
-                {isValid ? 'INICIAR TRANSMISSÃO' : error ? 'DADOS_CORROMPIDOS' : 'AGUARDANDO_DADOS'} <ChevronRight size={28} className={isValid ? 'animate-bounce-x' : ''} />
-              </span>
-            </button>
-
-            <button 
-              onClick={handleHelpClick}
-              className="w-full text-zinc-600 hover:text-cyber-cyan text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-colors group mt-2"
-            >
-              <Sparkles size={12} className="group-hover:animate-pulse" />
-              Dúvidas sobre este pacote? Consultar Sinal_IA
-              <div className="h-[1px] flex-1 bg-zinc-900 group-hover:bg-cyber-cyan/20 transition-colors" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-const MethodToggle = ({ active, onClick, label, sub, color, icon }: any) => (
-  <button
-    onClick={onClick}
-    className={`flex items-center gap-4 p-6 border-2 transition-all duration-300 text-left relative overflow-hidden ${
-      active 
-      ? `bg-zinc-900 ${color} text-white shadow-xl` 
-      : 'bg-black border-zinc-900 text-zinc-600 hover:border-zinc-800'
-    }`}
-  >
-    <div className={`transition-all duration-300 ${active ? 'scale-110' : 'grayscale opacity-50'}`}>
-      {icon}
-    </div>
-    <div>
-      <p className="font-black text-xl italic tracking-tighter uppercase leading-none">{label}</p>
-      <p className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-40 mt-1">{sub}</p>
-    </div>
-    {active && <div className="absolute top-2 right-2 w-2 h-2 bg-cyber-cyan rounded-full animate-pulse shadow-[0_0_10px_#06b6d4]" />}
-  </button>
-);
-
-const PaymentInstructions = ({ 
-  data, 
-  pkg, 
-  game,
-  onComplete 
-}: { 
-  data: { playerId: string, method: 'MPESA' | 'EMOLA' }, 
-  pkg: Package,
-  game: Game,
-  onComplete: () => void | Promise<void> 
-}) => {
-  const number = data.method === 'MPESA' ? PAYMENT_NUMBERS.MPESA : PAYMENT_NUMBERS.EMOLA;
-  const [copied, setCopied] = useState<'number' | 'amount' | null>(null);
-
-  const copyToClipboard = (text: string, type: 'number' | 'amount') => {
-    navigator.clipboard.writeText(text).catch(err => {
-      console.warn('Clipboard write failed:', err);
-    });
-    setCopied(type);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="max-w-4xl mx-auto space-y-12"
-    >
-      <div className="text-center md:text-left space-y-4">
-        <h2 className="text-7xl font-heading text-white italic tracking-tighter">LIQUIDAÇÃO <span className="text-cyber-cyan">PENDENTE</span></h2>
-        <p className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.5em] flex items-center justify-center md:justify-start gap-3 italic">
-          <ShieldCheck className="text-cyber-cyan" size={16} /> Verificação de Protocolo Nível 2 Ativa
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-zinc-950 border border-zinc-900 p-10 space-y-10 relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-1 h-full bg-cyber-cyan opacity-20" />
-          
-          <div className="flex items-center gap-4 text-cyber-cyan font-black uppercase text-[10px] tracking-widest pb-6 border-b border-zinc-900">
-            <span className="w-8 h-8 bg-cyber-cyan text-black flex items-center justify-center font-bold">01</span>
-            Instruções de Transferência
-          </div>
-
-          <div className="space-y-8">
-            <CopyBlock 
-              label="Endpoint de Destino (Telemóvel)" 
-              value={number} 
-              isCopied={copied === 'number'} 
-              onCopy={() => copyToClipboard(number, 'number')} 
-            />
-            <CopyBlock 
-              label="Montante de Câmbio (MZN)" 
-              value={`${pkg.price},00`} 
-              isCopied={copied === 'amount'} 
-              onCopy={() => copyToClipboard(pkg.price.toString(), 'amount')} 
+            <SidebarItem 
+              icon={Terminal} 
+              label="Terminal Admin" 
+              active={currentStep === 'ADMIN'} 
+              onClick={() => setStep('ADMIN')} 
             />
           </div>
+        </div>
+      )}
+    </div>
 
-          <div className="p-5 bg-black border-l-4 border-cyber-cyan text-zinc-500 text-[9px] leading-relaxed uppercase tracking-widest font-black italic">
-            Atenção: Use exatamente o valor especificado. Divergências podem retardar a sincronização em até 24h.
+    <div className="mt-8 p-6 bg-zinc-950/50 border-t border-zinc-900 space-y-6">
+      {userProfile && (
+        <div className="flex items-center gap-4 p-3 bg-black border border-zinc-900 rounded-sm">
+          <div className="w-10 h-10 bg-zinc-900 rounded-sm overflow-hidden border border-zinc-800 flex items-center justify-center">
+            <User size={20} className="text-zinc-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-black text-white truncate uppercase italic">{userProfile.displayName}</p>
+            <p className="text-[9px] text-cyber-emerald font-bold uppercase tracking-widest">{userProfile.balance},00 MT</p>
           </div>
         </div>
-
-        <div className="bg-zinc-950 border border-zinc-900 p-10 space-y-10 flex flex-col justify-between group">
-          <div className="space-y-8">
-            <div className="flex items-center gap-4 text-zinc-700 font-black uppercase text-[10px] tracking-widest pb-6 border-b border-zinc-900">
-              <span className="w-8 h-8 bg-zinc-900 text-zinc-700 flex items-center justify-center font-bold">02</span>
-              Validação de Transmissão
-            </div>
-            <p className="text-xs text-zinc-400 uppercase tracking-[0.2em] font-black leading-relaxed italic opacity-70">
-              Após liquidar, dispare o gatilho de validação via <span className="text-cyber-emerald">WhatsApp Central</span>. Nossa I.A. de triagem processará o ticket instantaneamente.
-            </p>
-          </div>
-
-              <div className="space-y-4 mt-6">
-                <button
-                  onClick={() => {
-                    const message = `Olá! Protocolo iniciado via Grid.%0A🚀 *PEDIDO:* ${pkg.name}%0A🕹️ *SERVIÇO:* ${game.name}%0A💎 *QUANTIDADE:* ${pkg.amount}%0A💰 *VALOR:* ${pkg.price},00 MT%0A🎯 *ID ALVO:* ${data.playerId}%0A💳 *MÉTODO:* ${data.method}`;
-                    window.open(`${WHATSAPP_LINK}?text=${message}`, '_blank');
-                  }}
-                  className="w-full py-8 bg-cyber-emerald text-black font-black uppercase italic tracking-[0.3em] text-2xl hover:bg-white transition-all shadow-[0_0_50px_rgba(16,185,129,0.3)] flex items-center justify-center gap-4 relative group"
-                >
-                  <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity" />
-                  <Smartphone size={32} className="group-hover:scale-110 transition-transform" /> ENVIAR COMPROVATIVO
-                </button>
-                <button
-                  onClick={onComplete}
-                  className="w-full py-5 text-[11px] text-zinc-600 font-black uppercase tracking-[0.5em] hover:text-white transition-colors border border-transparent hover:border-zinc-900"
-                >
-                  Confirmar no Terminal de Dados
-                </button>
-              </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-const CopyBlock = ({ label, value, isCopied, onCopy }: any) => (
-  <div className="group space-y-2">
-    <p className="text-[10px] text-zinc-600 font-black uppercase tracking-[0.2em]">{label}</p>
-    <div className="bg-black/50 border border-zinc-800 p-4 flex justify-between items-center hover:border-cyber-cyan/30 transition-all">
-      <p className="text-2xl font-mono font-bold text-white tracking-widest">{value}</p>
+      )}
+      
       <button 
-        onClick={onCopy}
-        className={`p-2 transition-all ${isCopied ? 'text-cyber-emerald' : 'text-zinc-700 hover:text-white'}`}
+        onClick={() => auth.signOut()}
+        className="w-full py-3 bg-zinc-900 hover:bg-cyber-red/20 text-zinc-500 hover:text-cyber-red transition-all border border-transparent hover:border-cyber-red/30 flex items-center justify-center gap-3 group"
       >
-        {isCopied ? <Check size={20} /> : <Copy size={20} />}
+        <LogOut size={16} className="group-hover:-translate-x-1 transition-transform" />
+        <span className="text-[9px] font-black uppercase tracking-widest italic">Encerrar Sessão</span>
       </button>
     </div>
-  </div>
+  </aside>
 );
-
-const SuccessStep = ({ onReset, orderData }: { onReset: () => void, orderData: any }) => {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [complete, setComplete] = useState(false);
-  const [isAuto, setIsAuto] = useState(false);
-
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const configSnap = await getDoc(doc(db, 'config', 'bot'));
-        if (configSnap.exists() && configSnap.data().autoApprove) {
-          setIsAuto(true);
-        }
-      } catch (e) {
-        handleFirestoreError(e, OperationType.GET, 'config/bot');
-      }
-    };
-    checkStatus();
-  }, []);
-
-  const steps = [
-    { label: 'Analise_OCR', sub: 'Escaneando comprovante de liquidação...', duration: 2500 },
-    { label: 'Sinc_Terminal', sub: 'Vinculando ID de usuário ao pacote...', duration: 2000 },
-    { label: 'Tunnel_Active', sub: 'Abrindo pipeline para servidor regional...', duration: 2200 },
-    { label: 'Injection_V4', sub: 'Disparando créditos no node alvo...', duration: 1800 },
-    { label: 'Finalizing', sub: 'Limpando cookies e confirmando hashes...', duration: 1500 },
-  ];
-
-  useEffect(() => {
-    if (currentStep < steps.length) {
-      const timer = setTimeout(() => {
-        setCurrentStep(prev => prev + 1);
-      }, steps[currentStep].duration);
-      return () => clearTimeout(timer);
-    } else {
-      setComplete(true);
-    }
-  }, [currentStep]);
-
-  return (
-    <motion.div 
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      className="text-center py-16 bg-zinc-950 border border-zinc-900 px-10 relative overflow-hidden group shadow-2xl"
-    >
-      {/* Laser Line Scan */}
-      <div className="absolute top-0 left-0 w-full h-[1px] bg-cyber-emerald shadow-[0_0_20px_rgba(16,185,129,1)] group-hover:top-full transition-all duration-[4000ms] ease-in-out" />
-      
-      <div className="relative z-10 space-y-12">
-        {!complete ? (
-          <div className="space-y-12">
-            <div className="flex flex-col items-center gap-6">
-              <div className="relative w-24 h-24">
-                <svg className="w-24 h-24 -rotate-90">
-                  <circle
-                    cx="48"
-                    cy="48"
-                    r="40"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="transparent"
-                    className="text-zinc-900"
-                  />
-                  <motion.circle
-                    cx="48"
-                    cy="48"
-                    r="40"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="transparent"
-                    strokeDasharray="251.2"
-                    initial={{ strokeDashoffset: 251.2 }}
-                    animate={{ strokeDashoffset: 251.2 - (251.2 * (currentStep / steps.length)) }}
-                    className="text-cyber-emerald"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                   <div className="text-cyber-emerald font-mono text-xl font-black">
-                     {Math.round((currentStep / steps.length) * 100)}%
-                   </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-3xl font-heading text-white italic tracking-tighter uppercase leading-none">PROCESSAMENTO <span className="text-cyber-emerald">AUTOMÁTICO</span></h3>
-                <p className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.4em] animate-pulse">Sinal_IA_Engine v4.2 Ativa</p>
-              </div>
-            </div>
-
-            <div className="max-w-md mx-auto bg-black border border-zinc-900 p-6 text-left space-y-4 font-mono">
-              {steps.map((s, i) => (
-                <div key={s.label} className={`flex items-start gap-4 transition-all duration-500 ${i > currentStep ? 'opacity-20 blur-[1px]' : 'opacity-100'}`}>
-                  <div className={`mt-1.5 w-2 h-2 rounded-full ${i < currentStep ? 'bg-cyber-emerald shadow-[0_0_8px_#10b981]' : (i === currentStep ? 'bg-white animate-ping' : 'bg-zinc-800')}`} />
-                  <div className="space-y-1">
-                    <p className={`text-[11px] font-black uppercase tracking-widest ${i === currentStep ? 'text-white' : (i < currentStep ? 'text-cyber-emerald' : 'text-zinc-700')}`}>
-                      [{s.label}] {i < currentStep ? 'DONE' : (i === currentStep ? 'RUNNING...' : 'PENDING')}
-                    </p>
-                    <p className="text-[9px] text-zinc-500">{s.sub}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="w-32 h-32 bg-black border border-zinc-900 flex items-center justify-center mx-auto mb-10 rotate-45 group">
-              <CheckCircle2 className="w-16 h-16 text-cyber-emerald -rotate-45 group-hover:scale-110 transition-all duration-500" />
-            </div>
-            
-            <div className="space-y-4">
-              <h2 className="text-7xl font-heading tracking-tighter text-white italic">PEDIDO <span className="text-cyber-emerald">PROCESSADO</span></h2>
-              <p className="text-zinc-600 font-black uppercase tracking-[0.4em] max-w-xl mx-auto text-[10px] leading-loose italic opacity-80">
-                {isAuto ? (
-                  <>O sinal automático de <span className="text-cyber-emerald">ENTREGA INSTANTÂNEA</span> foi disparado. Seus créditos foram injetados no Player ID: <span className="text-white bg-zinc-900 px-2 py-0.5">{orderData?.playerId || 'SINCRONIZADO'}</span> via terminal prioritário.</>
-                ) : (
-                  <>Sua solicitação foi sincronizada com a fila de processamento. O sistema automático aguarda o reconhecimento da compensação (SLA: 5-15 MIN).</>
-                )}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto">
-              <div className="bg-black border border-zinc-900 p-8 flex flex-col items-center group-hover:border-cyber-emerald/30 transition-colors">
-                <p className="text-zinc-800 text-[9px] mb-3 uppercase tracking-widest font-black italic">Tempo de Resposta</p>
-                <p className="text-white font-black italic text-3xl tracking-tighter">Instantâneo</p>
-              </div>
-              <div className="bg-black border border-zinc-900 p-8 flex flex-col items-center group-hover:border-cyber-emerald/30 transition-colors">
-                <p className="text-zinc-800 text-[9px] mb-3 uppercase tracking-widest font-black italic">Protocolo_Final</p>
-                <p className="text-cyber-emerald font-black italic text-3xl tracking-tighter">ENTREGUE</p>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-5 justify-center pt-8">
-              <button
-                onClick={() => window.open(WHATSAPP_LINK, '_blank')}
-                className="px-10 py-5 bg-cyber-emerald text-black font-black uppercase italic tracking-[0.2em] text-lg hover:bg-white transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] flex items-center justify-center gap-3"
-              >
-                <Smartphone size={24} /> CANAL DE SUPORTE
-              </button>
-              <button
-                onClick={onReset}
-                className="px-10 py-5 bg-zinc-900 text-zinc-500 font-black uppercase italic tracking-[0.2em] text-lg hover:text-white transition-all"
-              >
-                NOVA TRANSMISSÃO
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </motion.div>
-  );
-};
-
-const NotificationTray = ({ 
-  notifications, 
-  removeNotification 
-}: { 
-  notifications: Notification[], 
-  removeNotification: (id: string) => void 
-}) => {
-  return (
-    <div className="fixed bottom-16 sm:bottom-24 right-4 sm:right-12 z-[100] flex flex-col gap-4 w-full max-w-[340px]">
-      <AnimatePresence mode="popLayout">
-        {notifications.map((n) => (
-          <motion.div
-            key={n.id}
-            layout
-            initial={{ opacity: 0, x: 100, scale: 0.8 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: 20, scale: 0.9, transition: { duration: 0.2 } }}
-            className={`group relative p-6 bg-zinc-950/90 border border-zinc-900 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden`}
-          >
-            {/* Status Line */}
-            <div className={`absolute left-0 top-0 h-full w-1 ${
-              n.type === NotificationType.SUCCESS ? 'bg-cyber-emerald' :
-              n.type === NotificationType.ERROR ? 'bg-cyber-red' :
-              n.type === NotificationType.PROMO ? 'bg-cyber-orange' :
-              'bg-cyber-cyan'
-            } shadow-[0_0_10px_currentColor]`} />
-
-            <button 
-              onClick={() => removeNotification(n.id)}
-              className="absolute top-2 right-2 p-1 text-zinc-800 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
-            >
-              <X size={14} />
-            </button>
-
-            <div className="flex gap-5">
-              <div className={`mt-1 p-2 bg-black border border-zinc-800 ${
-                n.type === NotificationType.SUCCESS ? 'text-cyber-emerald' :
-                n.type === NotificationType.ERROR ? 'text-cyber-red' :
-                n.type === NotificationType.PROMO ? 'text-cyber-orange' :
-                'text-cyber-cyan'
-              }`}>
-                <n.icon size={18} />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{n.title}</span>
-                  <span className="text-[8px] text-zinc-800 font-mono">[{n.id.slice(0, 4)}]</span>
-                </div>
-                <p className="text-xs font-bold text-zinc-200 leading-relaxed italic pr-4">{n.message}</p>
-              </div>
-            </div>
-
-            {/* Scanning Effect */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-          </motion.div>
-        ))}
-      </AnimatePresence>
-    </div>
-  );
-};
 
 // --- Main App ---
 
@@ -1001,6 +238,8 @@ export default function App() {
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminError, setAdminError] = useState(false);
   const [isAdminVerifying, setIsAdminVerifying] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'VERIFYING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
   const handleAdminVerify = async () => {
     if (!adminPassword) return;
@@ -1063,23 +302,135 @@ export default function App() {
     }
   };
 
+  const [userProfile, setUserProfile] = useState<IUserProfile | null>(null);
+  const [isReseller, setIsReseller] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Sync Auth State
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        // Fetch or create profile
+        try {
+          const profileSnap = await getDoc(doc(db, 'profiles', currentUser.uid));
+          if (profileSnap.exists()) {
+            const data = profileSnap.data() as IUserProfile;
+            setUserProfile(data);
+            setIsAdmin(data.role === 'admin');
+            setIsReseller(data.role === 'reseller');
+          } else {
+            // New user initialization
+            const newProfile: IUserProfile = {
+              uid: currentUser.uid,
+              email: currentUser.email || '',
+              displayName: currentUser.displayName || 'Piloto Desconhecido',
+              balance: 0,
+              role: 'user',
+              vipLevel: 0,
+              createdAt: serverTimestamp()
+            };
+            try {
+              await setDoc(doc(db, 'profiles', currentUser.uid), newProfile);
+              setUserProfile(newProfile);
+            } catch (writeErr) {
+              reportFirestoreError(writeErr, OperationType.WRITE, `profiles/${currentUser.uid}`);
+            }
+          }
+        } catch (e) {
+          console.error("Erro ao carregar perfil:", e);
+          reportFirestoreError(e, OperationType.GET, `profiles/${currentUser.uid}`);
+        }
+      } else {
+        setUserProfile(null);
+        setIsAdmin(false);
+        setIsReseller(false);
+      }
+      setCheckingAuth(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Fetch Games
+  // Firebase Initialization Check
+  const initFirebase = async () => {
+    try {
+      // Test connection
+      await getDocFromServer(doc(db, 'system', 'handshake'));
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('the client is offline')) {
+        console.error("Firebase is offline. Check configuration.");
+      }
+    }
+  };
+
   const fetchGamesData = useCallback(async () => {
     try {
       const gamesSnap = await getDocs(collection(db, 'games'));
       
-      if (gamesSnap.empty) {
-        setGames([]);
-        setLoadingGames(false);
-        return;
-      }
-
       const getGameIcon = (name: string) => {
         const lowerName = name.toLowerCase();
         if (lowerName.includes('free fire')) return Gamepad2;
         if (lowerName.includes('pubg')) return Gamepad2;
         return Smartphone;
       };
+
+      // Seeding if empty
+      if (gamesSnap.empty) {
+        console.log("Seeding database with default games...");
+        const seedPromises = GAMES.map(async (g) => {
+          const gameRef = doc(db, 'games', g.id);
+          await setDoc(gameRef, {
+            name: g.name,
+            description: g.description,
+            color: g.color || 'bg-zinc-900',
+            accent: g.accent || 'text-cyan-500',
+            startingPrice: g.startingPrice || 0,
+            active: true
+          });
+          
+          const pkgPromises = g.packages.map(async (p, i) => {
+            let category = 'DEFAULT';
+            if (g.id === GameType.FREE_FIRE) {
+              if (i < 6) category = 'DIAMANTES';
+              else if (i < 9) category = 'NIVEL';
+              else if (i < 11) category = 'ASSINATURA';
+              else category = 'PASSE';
+            }
+
+            return setDoc(doc(db, `games/${g.id}/packages`, p.id), {
+              name: p.name,
+              amount: p.amount,
+              price: p.price,
+              category: category,
+              active: true,
+              bonus: p.bonus || '',
+              exactAmount: p.exactAmount || `${p.amount} Itens`
+            });
+          });
+          await Promise.all(pkgPromises);
+        });
+
+        await Promise.all(seedPromises);
+        // Refresh after seeding
+        const refreshedSnap = await getDocs(collection(db, 'games'));
+        const refreshedData = refreshedSnap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id as any,
+            name: data.name,
+            description: data.description,
+            color: data.color,
+            accent: data.accent,
+            startingPrice: data.startingPrice || 0,
+            icon: getGameIcon(data.name),
+            packages: []
+          } as Game;
+        });
+        setGames(refreshedData);
+        setLoadingGames(false);
+        return;
+      }
 
       const gamesData = gamesSnap.docs.map((d) => {
         const data = d.data();
@@ -1122,10 +473,13 @@ export default function App() {
       };
       setGames(updatedGames);
       
-      // Update selected game if it matches the fetching one
-      if (selectedGame?.id === gameId) {
-        setSelectedGame(updatedGames[gameIndex]);
-      }
+      // Update selected game using functional update to avoid stale closure
+      setSelectedGame(prev => {
+        if (prev?.id === gameId) {
+          return { ...prev, packages: pkgs };
+        }
+        return prev;
+      });
     } catch (e) {
       console.error(`Error loading packages for ${gameId}:`, e);
     } finally {
@@ -1188,25 +542,33 @@ export default function App() {
       try {
         // Count online users (last 5 minutes)
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-        const presenceQuery = query(collection(db, 'presence'), where('lastSeen', '>=', Timestamp.fromDate(fiveMinutesAgo)));
+        const presenceQuery = query(collection(db, 'presence'), where('lastSeen', '>=', fiveMinutesAgo));
         const presenceSnap = await getCountFromServer(presenceQuery);
         setOnlineCount(Math.max(1, presenceSnap.data().count));
 
         // Count orders today
-        // Note: For privacy and performance, only count orders if the user has permission to list ALL orders (admin) 
-        // OR simply display a base + slight variation for public stats
         setDeliveriesToday(1420 + Math.floor(Math.random() * 5)); // Base for visual effect
 
         // If user is admin, we can try to get real count
         if (user && user.email === 'do2738735@gmail.com') {
            const startOfDay = new Date();
            startOfDay.setHours(0, 0, 0, 0);
-           const ordersQuery = query(collection(db, 'orders'), where('createdAt', '>=', Timestamp.fromDate(startOfDay)));
+           const ordersQuery = query(collection(db, 'orders'), where('createdAt', '>=', startOfDay));
            const ordersSnap = await getCountFromServer(ordersQuery);
            setDeliveriesToday(1420 + ordersSnap.data().count);
         }
-      } catch (e) {
-        console.error("Failed to fetch stats (expected if not admin)", e);
+      } catch (e: any) {
+        // Only log if it's not a permission error or if user is admin
+        const isAdmin = user?.email === 'do2738735@gmail.com';
+        const isPermissionError = e.message?.includes('permission-denied');
+        const isConnectionError = e.message?.includes('Connection failed') || e.message?.includes('offline');
+        
+        if (isAdmin && !isPermissionError && !isConnectionError) {
+          console.error("Failed to fetch stats:", e.message || e);
+        } else if (!isPermissionError && !isConnectionError) {
+          // Fallback for non-admins if it's something totally unexpected
+          console.debug("Stats fetch failed (minor):", e.message || e);
+        }
       }
     };
 
@@ -1287,69 +649,77 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
-  const handlePaymentComplete = async () => {
-    const path = 'orders';
+
+  const handlePurchase = async (method: 'MPESA' | 'EMOLA' | 'BALANCE') => {
+    if (!selectedPkg || !checkoutData) return;
+
+    setStep('PAYMENT');
+    setPaymentStatus('VERIFYING');
+    setPurchaseError(null);
+
     try {
-      if (!auth.currentUser) {
-        setStep('AUTH');
-        return;
-      }
+      const response = await fetch('/api/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gameId: selectedGame?.id,
+          playerId: checkoutData.playerId,
+          packageId: selectedPkg.id,
+          amount: selectedPkg.amount,
+          price: selectedPkg.price,
+          userId: user?.uid || 'anonymous',
+          paymentMethod: method.toLowerCase()
+        })
+      });
 
-      if (selectedGame && selectedPkg && checkoutData && auth.currentUser) {
-        const uid = auth.currentUser.uid;
-        const orderId = `${Date.now()}-${uid.slice(0, 5)}`;
+      const result = await response.json();
+
+      if (result.success) {
+        const uid = user?.uid || 'anonymous';
+        const orderId = result.orderId || (result.data?.orderId) || `TX-${Date.now()}`;
         
-        let initialStatus = 'pending';
-        // Auto-approve logic
-        try {
-          const configSnap = await getDoc(doc(db, 'config', 'bot'));
-          if (configSnap.exists() && configSnap.data().autoApprove) {
-            initialStatus = 'delivered';
-          }
-        } catch (e) {
-          console.warn("Auto-approve fetch failed:", e);
-        }
-
-        // Save to Orders
-        await setDoc(doc(db, path, orderId), {
+        await setDoc(doc(db, 'orders', orderId), {
           userId: uid,
           playerId: checkoutData.playerId,
-          gameId: selectedGame.id,
-          gameName: selectedGame.name,
+          gameId: selectedGame?.id,
+          gameName: selectedGame?.name,
           packageId: selectedPkg.id,
           packageName: selectedPkg.name,
           price: selectedPkg.price,
-          status: initialStatus,
+          status: 'completed',
+          paymentMethod: method.toLowerCase(),
+          transactionId: orderId,
           createdAt: serverTimestamp()
         });
 
-        // Save Last Used Player ID for Automation / Auto-fill
-        try {
-          await setDoc(doc(db, 'user_profiles', uid), {
-            lastPlayerId: checkoutData.playerId,
-            updatedAt: serverTimestamp()
-          }, { merge: true });
-        } catch (e) {
-          handleFirestoreError(e, OperationType.WRITE, `user_profiles/${uid}`);
+        // Sync Metadata
+        if (user) {
+          try {
+            await setDoc(doc(db, 'profiles', user.uid), {
+              lastPlayerId: checkoutData.playerId,
+              displayName: user.displayName || 'Piloto'
+            }, { merge: true });
+          } catch (metaErr) {
+            console.warn("Falha ao sincronizar logs de ID:", metaErr);
+          }
         }
+
+        setDeliveriesToday(prev => prev + 1);
+
+        setTimeout(() => {
+          setPaymentStatus('SUCCESS');
+          setStep('SUCCESS');
+          addNotification(NotificationType.SUCCESS, 'Recarga Concluída', `Seus itens para ${selectedGame?.name} foram entregues.`, CheckCircle2);
+        }, 1500);
+      } else {
+        throw new Error(result.message);
       }
-      setStep('SUCCESS');
-      addNotification(
-        NotificationType.SUCCESS,
-        'Pagamento Notificado',
-        'Recebemos sua confirmação. Processando seus itens...',
-        CheckCircle2
-      );
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-      addNotification(
-        NotificationType.ERROR,
-        'Erro ao Registrar',
-        'Não foi possível registrar seu pedido. Verifique sua conexão.',
-        AlertCircle
-      );
+    } catch (error: any) {
+      console.error("Erro no processamento:", error);
+      setPaymentStatus('ERROR');
+      setPurchaseError(error.message);
+      addNotification(NotificationType.ERROR, 'Erro Crítico', error.message, AlertCircle);
     }
-    window.scrollTo(0, 0);
   };
 
   const handleReset = () => {
@@ -1369,288 +739,94 @@ export default function App() {
 
   if (checkingAuth) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-[10px] text-zinc-800 font-black uppercase tracking-[0.5em] animate-pulse italic">
-          Handshaking_Node_Access...
+      <div className="flex h-screen bg-black items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-grid-pattern opacity-5" />
+        <div className="relative flex flex-col items-center">
+          <div className="w-20 h-20 bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6">
+            <Loader2 className="animate-spin text-cyber-cyan" size={32} />
+          </div>
+          <p className="text-[10px] text-zinc-600 font-black uppercase tracking-[0.5em] animate-pulse italic">
+            Sincronizando_Acesso_Root...
+          </p>
         </div>
       </div>
     );
   }
 
-  if (!user) {
-    return (
-      <Suspense fallback={null}>
-        <LoginScreen onLoginSuccess={(u) => setUser(u)} />
-      </Suspense>
-    );
-  }
+  // Auth fallback handled in main AnimatePresence
 
   return (
-    <div className="min-h-screen bg-black text-cyan-50 font-sans flex flex-col futuristic-grid">
-      <div className="scanline" />
-      
-      {/* Notifications */}
-      <NotificationTray 
-        notifications={notifications} 
-        removeNotification={removeNotification} 
-      />
+    <div className="flex h-screen bg-black text-white relative overflow-hidden selection:bg-cyber-cyan selection:text-black">
+      {/* Background Decor */}
+      <div className="absolute inset-0 bg-grid-pattern opacity-5 pointer-events-none" />
+      <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-cyber-cyan/10 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute -bottom-[20%] -right-[10%] w-[50%] h-[50%] bg-cyber-emerald/10 blur-[120px] rounded-full pointer-events-none" />
 
-      {/* System Offline Overlay */}
-      {!isAppOpen && user?.email !== 'do2738735@gmail.com' && (
-        <div className="fixed inset-0 z-[999] bg-black flex flex-col items-center justify-center p-6 text-center">
-          <div className="absolute inset-0 bg-grid-pattern opacity-10" />
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="relative z-10 space-y-8"
-          >
-            <div className="w-24 h-24 bg-zinc-900 border border-cyber-red animate-pulse flex items-center justify-center mx-auto rounded-full shadow-[0_0_50px_rgba(239,68,68,0.3)]">
-              <ShieldCheck className="text-cyber-red" size={48} />
-            </div>
-            <div className="space-y-4">
-              <h2 className="text-5xl font-heading italic text-white tracking-tighter">SISTEMA <span className="text-cyber-red">OFFLINE</span></h2>
-              <p className="text-zinc-500 font-black uppercase tracking-[0.4em] max-w-sm mx-auto text-[10px] leading-loose italic">
-                O terminal da Grid está em manutenção de segurança. Protocolos root ativos apenas pela equipe técnica.
-              </p>
-            </div>
-            <div className="pt-8 border-t border-zinc-900">
-              <a 
-                href={WHATSAPP_SUPPORT_LINK}
-                target="_blank"
-                className="px-10 py-5 bg-cyber-red/10 border border-cyber-red/30 text-cyber-red font-black uppercase italic tracking-[0.2em] text-lg hover:bg-cyber-red hover:text-black transition-all"
-              >
-                CONTATAR OPERADOR
-              </a>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {/* Sidebar Desktop */}
+      <div className="hidden lg:block h-full relative z-40">
+        <Sidebar 
+          currentStep={step} 
+          setStep={(s: any) => {
+            setStep(s);
+            if (s === 'HOME') {
+              setSelectedGame(null);
+              setSelectedPkg(null);
+              setCheckoutData(null);
+            }
+          }} 
+          isAdmin={isAdmin}
+          userProfile={userProfile}
+        />
+      </div>
 
-      {/* Navigation */}
-      <nav className="relative z-50 h-24 border-b border-zinc-900 bg-black/80 backdrop-blur-xl sticky top-0 px-6 lg:px-12 flex items-center justify-between">
-        <div className="flex items-center gap-4 cursor-pointer group" onClick={handleReset}>
-          <div className="relative">
-            <div className="w-12 h-12 bg-gradient-to-br from-cyber-cyan to-blue-600 flex items-center justify-center transition-all group-hover:rotate-[360deg] duration-700 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.3)] border border-white/10">
-              <Gem className="text-white w-7 h-7 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 p-1 bg-black border border-zinc-800 rounded-md shadow-lg">
-              <ShieldCheck className="text-cyber-cyan w-3 h-3" />
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="block font-heading text-2xl text-white tracking-tighter leading-none font-black italic">AMITY <span className="text-cyber-cyan neon-glow">VENDAS</span></span>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="h-[1px] w-4 bg-cyber-cyan/30" />
-              <span className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.5em]">Elite Diamond Hub</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="hidden md:flex gap-10 text-[11px] font-black uppercase tracking-[0.4em] text-zinc-400 items-center">
-          <button 
-            onClick={() => handleNavigate('HOME')}
-            className={`hover:text-white transition-all relative py-2 ${step === 'HOME' ? 'text-cyber-cyan' : ''}`}
-          >
-            Sinal_Base
-            {step === 'HOME' && <motion.div layoutId="nav-line" className="absolute -bottom-1 left-0 w-full h-0.5 bg-cyber-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]" />}
-          </button>
-          <button 
-            onClick={() => handleNavigate('ORDER_HISTORY')}
-            className={`hover:text-white transition-all relative py-2 ${step === 'ORDER_HISTORY' ? 'text-cyber-cyan' : ''}`}
-          >
-            Logs_Dados
-            {step === 'ORDER_HISTORY' && <motion.div layoutId="nav-line" className="absolute -bottom-1 left-0 w-full h-0.5 bg-cyber-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]" />}
-          </button>
-
-          {user ? (
-            <div className="flex items-center gap-6">
-              <button 
-                onClick={() => handleNavigate('PROFILE')}
-                className={`hover:text-white transition-all relative py-2 ${step === 'PROFILE' ? 'text-cyber-cyan' : ''}`}
-              >
-                Perfil_Usuário
-                {step === 'PROFILE' && <motion.div layoutId="nav-line" className="absolute -bottom-1 left-0 w-full h-0.5 bg-cyber-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]" />}
-              </button>
-              <button 
-                onClick={() => auth.signOut()}
-                className="p-2 text-zinc-600 hover:text-cyber-red transition-colors"
-                title="Sair do Sistema"
-              >
-                <LogOut size={16} />
-              </button>
-            </div>
-          ) : (
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col h-full relative overflow-hidden">
+        {/* Top Header */}
+        <header className="h-20 border-b border-zinc-900 bg-black/50 backdrop-blur-md px-6 lg:px-12 flex items-center justify-between relative z-30">
+          <div className="flex items-center gap-4">
             <button 
-              onClick={() => handleNavigate('AUTH')}
-              className={`hover:text-white transition-all relative py-2 ${step === 'AUTH' ? 'text-cyber-cyan' : ''}`}
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="lg:hidden p-2 text-zinc-500 hover:text-white"
             >
-              Iniciar_Sessão
-              {step === 'AUTH' && <motion.div layoutId="nav-line" className="absolute -bottom-1 left-0 w-full h-0.5 bg-cyber-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]" />}
+              <Menu size={24} />
             </button>
-          )}
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.4em] italic mb-0.5">Sessão_Ativa</span>
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-cyber-emerald rounded-full animate-pulse shadow-[0_0_8px_#10b981]" />
+                <span className="text-xs font-mono font-bold text-zinc-400">PROTOCOLO_V4.SECURE</span>
+              </div>
+            </div>
+          </div>
 
-          <button 
-            onClick={() => { setShowAdminPrompt(true); setIsMobileMenuOpen(false); }}
-            className="hover:text-cyber-red transition-all"
-          >
-            Acesso_Root
-          </button>
-          
-          <button 
-            onClick={() => { setAiTriggerMessage("__OPEN_ONLY__"); }}
-            className={`flex items-center gap-2 px-4 py-2 bg-cyber-cyan/10 border border-cyber-cyan/20 text-cyber-cyan hover:bg-cyber-cyan hover:text-black transition-all group ${step === 'ADMIN' ? 'hidden' : ''}`}
-          >
-            <Sparkles size={14} className="group-hover:animate-spin" />
-            <span className="hidden lg:inline uppercase tracking-widest text-[11px] font-black">Abrir Chat IA</span>
-          </button>
-          
-          <div className="h-8 w-[1px] bg-zinc-900" />
-          
-          <div className="relative">
-            <Bell className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
-            {notifications.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-cyber-cyan rounded-full animate-ping" />
+          <div className="flex items-center gap-8">
+            <div className="hidden sm:flex flex-col items-end">
+              <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest italic mb-0.5">Hash_Rede</span>
+              <span className="text-[10px] font-mono text-cyber-cyan tracking-tighter">0xCC...SINAL_88</span>
+            </div>
+            {auth.currentUser ? (
+               <div className="flex items-center gap-4 pl-8 border-l border-zinc-900">
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-black text-zinc-400 uppercase italic leading-none mb-1">{auth.currentUser.displayName || 'PILOTO'}</span>
+                    <span className="text-[11px] font-black text-cyber-emerald italic tracking-tighter leading-none">{userProfile?.balance || 0},00 MT</span>
+                  </div>
+                  <div className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-sm flex items-center justify-center">
+                    <User size={18} className="text-zinc-600" />
+                  </div>
+               </div>
+            ) : (
+               <button 
+                onClick={() => setStep('AUTH')}
+                className="px-6 py-2 bg-zinc-900 border border-zinc-800 hover:bg-white hover:text-black transition-all text-[10px] font-black uppercase tracking-widest"
+              >
+                AUTENTICAR_NODE
+              </button>
             )}
           </div>
-        </div>
+        </header>
 
-        {/* Mobile Menu Toggle */}
-        <button 
-          className="md:hidden text-zinc-500 hover:text-white transition-colors relative z-[60]"
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-      </nav>
-
-      {/* Mobile Sidebar */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[55] md:hidden"
-            />
-            
-            {/* Sidebar Panel */}
-            <motion.div 
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 h-full w-[280px] bg-black border-l border-zinc-900 md:hidden z-[56] shadow-2xl flex flex-col pt-24 px-6 overflow-y-auto"
-            >
-              <div className="flex flex-col gap-2">
-                <div className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <span className="w-4 h-[1px] bg-zinc-800"></span>
-                  Navegação
-                </div>
-
-                {[
-                  { id: 'HOME', label: 'Jogos', icon: Home, color: 'text-white' },
-                  !user && { id: 'AUTH', label: 'Entrar', icon: LogIn, color: 'text-white' },
-                  { id: 'ORDER_HISTORY', label: 'Histórico', icon: History, color: 'text-white' },
-                  { id: 'PROFILE', label: 'Perfil', icon: User, color: 'text-white', authOnly: true },
-                ].filter(Boolean).map((item: any) => {
-                  if (item.authOnly && !user) return null;
-                  const isActive = step === item.id;
-                  const Icon = item.icon;
-                  
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleNavigate(item.id as any)}
-                      className={`group flex items-center justify-between p-4 border transition-all ${
-                        isActive 
-                          ? 'bg-cyber-cyan/5 border-cyber-cyan/30 text-white' 
-                          : 'bg-transparent border-transparent text-zinc-500 hover:bg-zinc-900/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className={`p-2 transition-colors ${isActive ? 'text-cyber-cyan' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
-                          <Icon size={18} />
-                        </div>
-                        <span className="text-xs font-black uppercase tracking-[0.3em]">
-                          {item.label}
-                        </span>
-                      </div>
-                      {isActive && (
-                        <motion.div 
-                          layoutId="active-dot-mobile"
-                          className="w-1.5 h-1.5 bg-cyber-cyan rounded-full shadow-[0_0_10px_rgba(6,182,212,1)]"
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-
-                <button 
-                  onClick={() => { setAiTriggerMessage("__OPEN_ONLY__"); setIsMobileMenuOpen(false); }}
-                  className="flex items-center justify-between p-4 border border-cyber-cyan/10 bg-cyber-cyan/5 text-cyber-cyan hover:bg-cyber-cyan/10 transition-all group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="p-2">
-                      <Sparkles size={18} className="group-hover:animate-spin" />
-                    </div>
-                    <span className="text-xs font-black uppercase tracking-[0.3em]">
-                      Interagir com Sinal IA
-                    </span>
-                  </div>
-                </button>
-
-                <div className="h-[1px] bg-zinc-900/50 my-4" />
-
-                <button 
-                  onClick={() => { setShowAdminPrompt(true); setIsMobileMenuOpen(false); }}
-                  className="flex items-center gap-4 p-4 text-cyber-red/70 hover:text-cyber-red hover:bg-cyber-red/5 transition-all text-left group"
-                >
-                  <div className="p-2">
-                    <Terminal size={18} />
-                  </div>
-                  <span className="text-[10px] font-black uppercase tracking-[0.3em]">
-                    Acesso Root
-                  </span>
-                </button>
-
-                {user && (
-                  <button 
-                    onClick={() => { auth.signOut(); setIsMobileMenuOpen(false); }}
-                    className="flex items-center gap-4 p-4 text-zinc-600 hover:text-white hover:bg-white/5 transition-all text-left group mt-auto mb-8"
-                  >
-                    <div className="p-2">
-                      <LogOut size={18} />
-                    </div>
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em]">
-                      Sair do Sistema
-                    </span>
-                  </button>
-                )}
-              </div>
-
-              <div className="mt-8 pt-8 border-t border-zinc-900 pb-12">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-8 h-8 bg-zinc-900 flex items-center justify-center font-black text-zinc-600 text-[10px]">
-                    ID
-                  </div>
-                  <div>
-                    <div className="text-[8px] text-zinc-700 font-mono">STATUS_CONEXÃO</div>
-                    <div className="text-[10px] text-cyber-cyan font-mono animate-pulse uppercase">Encriptado</div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Main Content */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-12 md:py-20 relative">
+        {/* Content Body */}
+        <main className="flex-1 overflow-y-auto scrollbar-hide relative z-20 p-6 lg:p-12">
         <AnimatePresence mode="wait">
           {(!user && step !== 'HOME') ? (
              <Suspense fallback={<div className="h-96 flex items-center justify-center"><Loader2 className="animate-spin text-cyber-cyan" /></div>}>
@@ -1989,6 +1165,22 @@ export default function App() {
               </Suspense>
             </motion.div>
           )}
+          
+          {step === 'AUTH' && (
+            <motion.div
+              key="auth"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <Suspense fallback={<div className="py-40 text-center">CARREGANDO...</div>}>
+                <LoginScreen 
+                  onSuccess={() => setStep('HOME')} 
+                  onBack={() => setStep('HOME')}
+                />
+              </Suspense>
+            </motion.div>
+          )}
 
           {step === 'PACKAGES' && selectedGame && (
             <motion.div
@@ -2035,9 +1227,7 @@ export default function App() {
                 pkg={selectedPkg}
                 game={selectedGame}
                 onComplete={() => {
-                  handlePaymentComplete().catch(err => {
-                    console.error("Payment registration failed:", err);
-                  });
+                  handlePurchase(checkoutData.method);
                 }}
               />
             </motion.div>
@@ -2050,59 +1240,71 @@ export default function App() {
             />
           )}
         </AnimatePresence>
-      </main>
+        </main>
 
-      {/* Support and Admin Access Section - Home only ideally, or fixed bottom */}
-      {step === 'HOME' && (
-        <section className="container mx-auto px-6 pb-12">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a 
-              href={`tel:856295597`}
-              className="flex flex-col items-center justify-center p-6 bg-zinc-950/50 border border-zinc-900 group hover:border-cyber-cyan transition-all"
-            >
-              <Phone size={24} className="text-cyber-cyan mb-2 transition-transform group-hover:scale-110" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-600">Suporte Voz</span>
-              <span className="text-lg font-bold text-white font-mono mt-1">856295597</span>
-            </a>
-            
-            <a 
-              href={((import.meta as any).env?.VITE_WHATSAPP_SUPPORT_LINK) || 'https://wa.me/258856295597'} 
-              target="_blank" 
-              rel="no-referrer"
-              className="flex flex-col items-center justify-center p-6 bg-zinc-950/50 border border-zinc-900 group hover:border-cyber-emerald transition-all"
-            >
-              <MessageSquare size={24} className="text-cyber-emerald mb-2 transition-transform group-hover:scale-110" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-600">Suporte WhatsApp</span>
-              <span className="text-lg font-bold text-white font-mono mt-1">ENVIAR MENSAGEM</span>
-            </a>
-
-            <button 
-              onClick={() => setShowAdminPrompt(true)}
-              className="flex flex-col items-center justify-center p-6 bg-zinc-900 border border-transparent group hover:bg-white hover:text-black transition-all"
-            >
-              <ShieldCheck size={24} className="mb-2 transition-transform group-hover:rotate-12" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Terminal de Controle</span>
-              <span className="text-lg font-bold font-heading mt-1">SISTEMA ADM</span>
-            </button>
+        {/* Dashboard Footer */}
+        <footer className="h-12 border-t border-zinc-900 bg-black/80 backdrop-blur-md px-6 lg:px-12 flex items-center justify-between relative z-30">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-cyber-emerald rounded-full animate-pulse shadow-[0_0_8px_#10b981]" />
+              <span className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] italic">Signal_Active</span>
+            </div>
+            <div className="hidden sm:flex items-center gap-2">
+              <span className="text-[10px] font-black text-zinc-700 uppercase tracking-[0.2em] italic">Deliveries_Today:</span>
+              <span className="text-[11px] font-black text-white font-mono">{deliveriesToday}</span>
+            </div>
           </div>
-          
-          <div className="mt-4 text-center">
-            <p className="text-xs text-zinc-500 font-black uppercase tracking-[0.4em]">Linha Secundária: 871087088 // STATUS: OPERACIONAL</p>
+          <div className="flex items-center gap-6">
+            <span className="hidden lg:inline text-[9px] font-black text-zinc-800 uppercase tracking-widest italic">Quantum_Encryption: AES_256</span>
+            <div className="hidden lg:block w-px h-4 bg-zinc-900" />
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black text-cyber-cyan uppercase tracking-widest animate-pulse">Scanning_Nodes...</span>
+            </div>
           </div>
-        </section>
-      )}
-
-      {/* Bottom Bar Info */}
-      <div className="h-12 bg-black border-t border-cyan-500/30 flex items-center justify-between px-6 sm:px-10 text-xs font-black uppercase tracking-[0.3em] text-cyan-400 relative z-50">
-        <span className="hidden sm:inline opacity-60">LINK QUANTUM: SEGURO</span>
-        <div className="flex gap-6 mx-auto sm:mx-0">
-          <span className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-            ANÁLISE DE REDE: {onlineCount} ATIVOS
-          </span>
-          <span className="text-white">TRANSAÇÕES_HOJE: {deliveriesToday}</span>
-        </div>
+        </footer>
       </div>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] lg:hidden"
+            />
+            <motion.div 
+              initial={{ x: -300 }}
+              animate={{ x: 0 }}
+              exit={{ x: -300 }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              className="fixed inset-y-0 left-0 w-72 z-[110] lg:hidden"
+            >
+              <Sidebar 
+                currentStep={step} 
+                setStep={(s: any) => {
+                  setStep(s);
+                  setIsMobileMenuOpen(false);
+                  if (s === 'HOME') {
+                    setSelectedGame(null);
+                    setSelectedPkg(null);
+                    setCheckoutData(null);
+                  }
+                }} 
+                isAdmin={isAdmin}
+                userProfile={userProfile}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <NotificationTray 
+        notifications={notifications}
+        removeNotification={removeNotification}
+      />
 
       <AnimatePresence>
         {showAdminPrompt && (
@@ -2166,7 +1368,7 @@ export default function App() {
                     <button 
                       onClick={handleAdminVerify}
                       disabled={isAdminVerifying}
-                      className="cyber-button bg-cyber-cyan text-black flex items-center justify-center gap-2"
+                      className="w-full py-4 bg-cyber-cyan text-black font-black uppercase italic tracking-widest hover:bg-white text-[10px] transition-all flex items-center justify-center gap-2"
                     >
                       {isAdminVerifying ? (
                         <Loader2 className="animate-spin" size={16} />
@@ -2199,7 +1401,7 @@ export default function App() {
                       }}
                       className="flex items-center justify-center gap-3 w-full py-4 bg-white text-black text-[10px] font-black uppercase tracking-[0.1em] hover:bg-zinc-200 transition-all border-b-4 border-zinc-400"
                     >
-                      <User size={14} /> AUTENTICAÇÃO GOOGLE_BIOMÉTRICA
+                      <User size={14} /> AUTENTICAÇÃO GOOGLE
                     </button>
 
                     <button 
@@ -2224,7 +1426,7 @@ export default function App() {
       </AnimatePresence>
       
       <AIAssistant 
-        isAdmin={user?.email === 'do2738735@gmail.com' || step === 'ADMIN'} 
+        isAdmin={isAdmin} 
         userEmail={user?.email}
         onSystemToggle={setIsAppOpen}
         externalMessage={aiTriggerMessage}

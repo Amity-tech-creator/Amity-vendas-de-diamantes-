@@ -71,19 +71,57 @@ export const AIAssistant = ({
         return;
       }
 
+      // Extract meaningful information from the reason
+      let errorString = '';
+      let isNoisy = false;
+
+      if (reason instanceof Error) {
+        errorString = reason.message;
+        if (reason.stack) console.debug('Rejection Stack:', reason.stack);
+      } else if (typeof reason === 'string') {
+        errorString = reason;
+      } else if (reason && typeof reason === 'object') {
+        try {
+          errorString = JSON.stringify(reason);
+          // Check if it's an empty object like {}
+          if (errorString === '{}') isNoisy = true;
+        } catch (e) {
+          errorString = String(reason);
+        }
+      } else if (reason === undefined || reason === null) {
+        isNoisy = true;
+      }
+
+      // Ignore common harmless rejections or empty reasons
+      if (
+        isNoisy ||
+        !errorString ||
+        errorString.includes('user gesture') || 
+        errorString.includes('already starting') || 
+        errorString.includes('The user aborted a request') ||
+        errorString.includes('Interrupted by a call to pause') ||
+        errorString.includes('play() request was interrupted') ||
+        errorString.includes('AbortError') ||
+        errorString === 'undefined' || 
+        errorString === 'null' || 
+        errorString === '[object Object]'
+      ) {
+        return;
+      }
+
       // For logging real rejections in console AFTER filtering
       console.error('Captured Promise Rejection:', reason);
 
       // If it's a Firestore error (JSON string), parse it for better display
-      let displayMessage = message;
-      if (message.startsWith('{') && message.includes('operationType')) {
+      let displayMessage = errorString;
+      if (errorString.startsWith('{') && errorString.includes('operationType')) {
         try {
-          const parsed = JSON.parse(message);
+          const parsed = JSON.parse(errorString);
           displayMessage = `Falha de Permissão Firestore (${parsed.operationType} em ${parsed.path})`;
         } catch (e) {}
       }
 
-      const errorMsg = `[ASYNC_CONFLIT]: Erro detectado. Código: ${displayMessage}.`;
+      const errorMsg = `[ASYNC_CONFLIT]: Erro detectado. Código: ${displayMessage.slice(0, 100)}${displayMessage.length > 100 ? '...' : ''}.`;
       setMessages(prev => [...prev, { role: 'model', text: errorMsg }]);
     };
 
@@ -589,7 +627,7 @@ export const AIAssistant = ({
     }
   };
 
-  if (!isAdmin) return null;
+  // if (!isAdmin) return null; // Removed to allow all users to use AI helper
 
   return (
     <div className="fixed bottom-6 right-6 z-[100]">

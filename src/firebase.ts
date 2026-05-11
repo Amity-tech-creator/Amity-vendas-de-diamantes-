@@ -18,8 +18,8 @@ export async function initFirebase() {
       console.warn('Firebase connection check failed (expected if document missing), but SDK is initialized');
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Connection failed. Please check your network or Firebase configuration.");
+    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('Connection failed'))) {
+      console.warn("Firebase is starting up or offline. Handshake pending...");
     } else {
       console.error("Firebase init failed:", error);
     }

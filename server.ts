@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import OpenAI from "openai";
 import dotenv from "dotenv";
+import axios from "axios";
 
 dotenv.config();
 
@@ -114,6 +115,74 @@ async function startServer() {
         res.status(status).json({ error: message });
       }
     }
+  });
+
+  // --- RECHARGE SYSTEM 2026 ---
+
+  // Order Processing
+  app.post("/api/buy", async (req, res) => {
+    try {
+      const { gameId, playerId, packageId, amount, price, userId, paymentMethod } = req.body;
+
+      // 1. Verify Payment (M-Pesa / E-Mola)
+      // In a real scenario, we'd call the Vodacom/Movitel API here.
+      console.log(`Processing ${paymentMethod} payment for ${userId}...`);
+      const paymentConfirmed = true; // Placeholder for real verification logic
+
+      if (!paymentConfirmed) {
+        return res.status(400).json({ success: false, message: "Pagamento não confirmado." });
+      }
+
+      // 2. Call Top-Up API
+      // Using the suggestion provided by the user in the prompt
+      console.log(`Calling Top-Up API for ${gameId} - Player: ${playerId}`);
+      
+      const API_URL = "https://api.topup.com/order"; // Mocked external API
+      const API_KEY = process.env.API_KEY;
+
+      if (!API_KEY) {
+        // For development/preview, we simulate success if API_KEY is missing
+        console.warn("API_KEY not found. Simulating successful recharge.");
+        return res.json({
+          success: true,
+          orderId: `ORDER-${Date.now()}`,
+          message: "Recarga enviada com sucesso (Simulação)"
+        });
+      }
+
+      const response = await axios.post(
+        API_URL,
+        {
+          game: gameId,
+          player_id: playerId,
+          package: packageId
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${API_KEY}`
+          }
+        }
+      );
+
+      res.json({
+        success: true,
+        data: response.data,
+        message: "Recarga processada automaticamente"
+      });
+
+    } catch (error: any) {
+      console.error("Purchase Error:", error);
+      res.status(500).json({
+        success: false,
+        message: error.response?.data?.message || error.message
+      });
+    }
+  });
+
+  // Balance Management
+  app.post("/api/add-balance", async (req, res) => {
+    // Logic for resellers or manual balance top-up
+    res.json({ success: true, message: "Função em breve" });
   });
 
   // Vite middleware for development

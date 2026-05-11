@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Activity, Zap, ShieldCheck, Cpu } from 'lucide-react';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { handleFirestoreError, OperationType } from '../utils';
+import { handleFirestoreError, reportFirestoreError, OperationType } from '../utils';
 
 interface Order {
   id: string;
@@ -31,7 +31,7 @@ export const LiveAutomationFeed = () => {
       })) as Order[];
       setOrders(docs);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'orders');
+      reportFirestoreError(error, OperationType.LIST, 'orders');
     });
 
     return () => unsubscribe();

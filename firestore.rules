@@ -36,8 +36,8 @@ service cloud.firestore {
       allow create: if (
         isSignedIn() &&
         isValidId(orderId) &&
-        incoming().keys().hasAll(['userId', 'playerId', 'gameId', 'gameName', 'packageId', 'packageName', 'price', 'status', 'createdAt']) &&
-        incoming().keys().size() == 9 &&
+        incoming().keys().hasAll(['userId', 'playerId', 'gameId', 'gameName', 'packageId', 'packageName', 'price', 'status', 'paymentMethod', 'transactionId', 'createdAt']) &&
+        incoming().keys().size() == 11 &&
         incoming().userId == request.auth.uid &&
         incoming().playerId is string && incoming().playerId.size() <= 100 &&
         incoming().gameId is string &&
@@ -45,13 +45,14 @@ service cloud.firestore {
         incoming().packageId is string &&
         incoming().packageName is string &&
         incoming().price is number &&
-        (incoming().status == 'pending' || incoming().status == 'delivered') &&
+        incoming().status in ['pending', 'processing', 'completed', 'failed', 'refunded'] &&
+        incoming().paymentMethod in ['mpesa', 'emola', 'balance'] &&
+        incoming().transactionId is string &&
         incoming().createdAt == request.time
       );
-      // Users can see the live feed entries and their own full orders
-      allow list: if true;
+      // Allowing list for all authenticated users for the live feed, but strict filtering is assumed
+      allow list: if isSignedIn();
       allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      // Admin can update status (e.g. to completed)
       allow update: if isAdmin();
     }
 
@@ -87,7 +88,6 @@ service cloud.firestore {
     // 5. Admin Security Config
     match /config/admin {
       allow read: if isSignedIn();
-      // Only the super-admin can update the hash
       allow write: if isAdmin();
     }
 
@@ -110,9 +110,31 @@ service cloud.firestore {
     }
 
     // 9. User Profiles
-    match /user_profiles/{userId} {
+    match /profiles/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow write: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId && (
+        incoming().keys().hasAll(['uid', 'email', 'displayName', 'balance', 'role', 'vipLevel', 'createdAt']) &&
+        incoming().keys().size() == 7 &&
+        incoming().uid == userId &&
+        incoming().email == request.auth.token.email &&
+        incoming().role == 'user' &&
+        incoming().balance == 0 &&
+        incoming().createdAt == request.time
+      );
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && (
+          // Allow updating specific fields
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'lastPlayerId']) ||
+          // Or allow full sync as long as protected fields aren't changed
+          (
+            incoming().role == existing().role &&
+            incoming().balance == existing().balance &&
+            incoming().uid == existing().uid &&
+            incoming().email == existing().email
+          )
+        )) ||
+        isAdmin()
+      );
     }
   }
 }

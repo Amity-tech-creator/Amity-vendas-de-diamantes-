@@ -12,16 +12,24 @@
         "packageId": { "type": "string" },
         "packageName": { "type": "string" },
         "price": { "type": "number" },
-        "status": { "type": "string", "enum": ["pending", "delivered"] },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "failed", "refunded"] },
+        "paymentMethod": { "type": "string", "enum": ["mpesa", "emola", "balance"] },
+        "transactionId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "playerId", "gameId", "gameName", "packageId", "packageName", "price", "status", "createdAt"]
+      "required": ["userId", "playerId", "gameId", "packageName", "price", "status", "paymentMethod", "createdAt"]
     },
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User specific data like last player ID",
+      "description": "User specific data like balance and role",
       "type": "object",
       "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "balance": { "type": "number" },
+        "role": { "type": "string", "enum": ["user", "admin", "reseller"] },
+        "vipLevel": { "type": "number" },
         "lastPlayerId": { "type": "string" },
         "updatedAt": { "type": "string", "format": "date-time" }
       }
@@ -149,7 +157,7 @@
       "schema": "BotCommand",
       "description": "Bot triggers and responses"
     },
-    "user_profiles/{userId}": {
+    "profiles/{userId}": {
       "schema": "UserProfile",
       "description": "User preference profiles"
     }
